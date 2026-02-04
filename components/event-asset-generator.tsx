@@ -105,7 +105,8 @@ export function EventAssetGenerator() {
   };
 
   const renderAll = React.useCallback(() => {
-    if (!logoRef.current) return;
+    const logo = logoRef.current;
+    if (!logo) return;
 
     (Object.keys(FORMAT_CONFIG) as FormatKey[]).forEach((key) => {
       const canvas = canvasRefs.current[key];
@@ -116,7 +117,7 @@ export function EventAssetGenerator() {
       const ctx = canvas.getContext("2d");
       if (!ctx) return;
 
-      drawFormat(canvas, ctx, cfg, form, logoRef.current);
+      drawFormat(canvas, ctx, cfg, form, logo);
     });
   }, [form]);
 
@@ -373,13 +374,15 @@ function drawFormat(
   }
   totalTextHeight += titleHeight;
   
+  // Calculate meta parts for date/time
+  const dateText = form.date ? format(form.date, "dd.MM.yyyy") : "";
+  const metaParts = [dateText, form.time].filter(Boolean);
+  
   // Only add subtitle and date/time for formats that include meta
   if (cfg.includeMeta) {
     if (form.subtitle && subtitleLines.length > 0) {
       totalTextHeight += spacingAfterTitle + subtitleHeight;
     }
-    const dateText = form.date ? format(form.date, "dd.MM.yyyy") : "";
-    const metaParts = [dateText, form.time].filter(Boolean);
     if (metaParts.length > 0) {
       totalTextHeight += spacingAfterSubtitle + metaHeight;
     }
