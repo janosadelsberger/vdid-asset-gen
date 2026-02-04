@@ -1,0 +1,31 @@
+import "./globals.css";
+import type { Metadata } from "next";
+import { Roboto } from "next/font/google";
+
+const roboto = Roboto({
+  subsets: ["latin"],
+  weight: ["300", "400", "500"],
+  variable: "--font-roboto",
+});
+
+export const metadata: Metadata = {
+  title: "VDID Event Asset Generator",
+  description: "Generate VDID-compliant event visuals for web and social media.",
+};
+
+export default function RootLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
+  return (
+    <html lang="de">
+      <body
+        className={`${roboto.variable} font-sans bg-slate-100 text-slate-900`}
+      >
+        {children}
+      </body>
+    </html>
+  );
+}
+
