@@ -1,0 +1,1 @@
+# vdid-asset-gen
