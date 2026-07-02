@@ -1,6 +1,7 @@
 "use client";
 
 import React from "react";
+import type { CustomTemplate } from "@/lib/custom-template";
 import {
   renderLabSlideToContext,
   type LabSlide,
@@ -17,6 +18,7 @@ export type LabSlidePreviewProps = {
   logoWhiteRef?: React.RefObject<HTMLImageElement | null>;
   slideImagesRef: React.RefObject<Map<string, HTMLImageElement>>;
   partnerLogosRef: React.RefObject<Map<string, HTMLImageElement>>;
+  customTemplatesRef?: React.RefObject<Map<string, CustomTemplate>>;
   logoLoaded: boolean;
   /** Bump when async images finish loading into the ref maps. */
   renderRevision?: number;
@@ -41,6 +43,7 @@ export const LabSlidePreview = React.forwardRef<
     logoWhiteRef,
     slideImagesRef,
     partnerLogosRef,
+    customTemplatesRef,
     logoLoaded,
     renderRevision = 0,
     maxHeight = 480,
@@ -71,6 +74,7 @@ export const LabSlidePreview = React.forwardRef<
       logoWhite: logoWhiteRef?.current ?? null,
       slideImages: slideImagesRef.current ?? new Map(),
       partnerLogos: partnerLogosRef.current ?? new Map(),
+      customTemplates: customTemplatesRef?.current ?? new Map(),
     };
 
     renderLabSlideToContext(
@@ -90,6 +94,7 @@ export const LabSlidePreview = React.forwardRef<
     logoWhiteRef,
     slideImagesRef,
     partnerLogosRef,
+    customTemplatesRef,
   ]);
 
   const canvas = (

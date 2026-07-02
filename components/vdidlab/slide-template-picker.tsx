@@ -3,6 +3,9 @@
 import React from "react";
 import { cn } from "@/lib/utils";
 import type { SlideType } from "@/lib/lab-slide-render";
+import type { CustomTemplate } from "@/lib/custom-template";
+import { renderCustomTemplateThumbnail } from "@/lib/custom-template-render";
+import type { RenderAssets } from "@/lib/lab-slide-render";
 
 export const SLIDE_TYPES_ORDER: SlideType[] = [
   "eventPhoto",
@@ -22,6 +25,7 @@ export const SLIDE_TYPE_LABELS: Record<SlideType, string> = {
   fullImage: "Foto Vollbild",
   coBranded: "Co-Branding",
   freeform: "Freitext",
+  custom: "Eigene Vorlage",
 };
 
 export const SLIDE_TYPE_CAPTIONS: Record<SlideType, string> = {
@@ -39,6 +43,7 @@ export const SLIDE_TYPE_CAPTIONS: Record<SlideType, string> = {
     "Wie Event mit Foto, plus Partner-Logo unten rechts — für Kooperationen.",
   freeform:
     "Flexibles Layout mit optionaler Formatzeile, Titel, Text, Foto und Name.",
+  custom: "Eigene Vorlage mit Platzhaltern — Inhalte in den Feldern unten ausfüllen.",
 };
 
 const WF = {
@@ -173,15 +178,50 @@ function TemplateWireframe({ type }: { type: SlideType }) {
 
 export type SlideTemplatePickerProps = {
   value: SlideType;
+  customTemplateId?: string | null;
+  customTemplates?: CustomTemplate[];
+  renderAssets?: RenderAssets | null;
   onChange: (type: SlideType) => void;
+  onSelectCustom?: (templateId: string) => void;
   id?: string;
 };
 
 export function SlideTemplatePicker({
   value,
+  customTemplateId,
+  customTemplates = [],
+  renderAssets,
   onChange,
+  onSelectCustom,
   id = "slide-template",
 }: SlideTemplatePickerProps) {
+  const [customThumbs, setCustomThumbs] = React.useState<Map<string, string>>(
+    new Map(),
+  );
+
+  React.useEffect(() => {
+    if (!renderAssets || customTemplates.length === 0) {
+      setCustomThumbs(new Map());
+      return;
+    }
+    const next = new Map<string, string>();
+    for (const t of customTemplates) {
+      const url = renderCustomTemplateThumbnail(t, renderAssets, 80);
+      if (url) next.set(t.id, url);
+    }
+    setCustomThumbs(next);
+  }, [customTemplates, renderAssets]);
+
+  const captionLabel =
+    value === "custom" && customTemplateId
+      ? customTemplates.find((t) => t.id === customTemplateId)?.name ?? "Eigene Vorlage"
+      : SLIDE_TYPE_LABELS[value as keyof typeof SLIDE_TYPE_LABELS] ?? value;
+
+  const captionText =
+    value === "custom"
+      ? "Eigene Vorlage mit Platzhaltern — Inhalte in den Feldern unten ausfüllen."
+      : SLIDE_TYPE_CAPTIONS[value as keyof typeof SLIDE_TYPE_CAPTIONS];
+
   return (
     <div className="space-y-3">
       <div
@@ -190,7 +230,7 @@ export function SlideTemplatePicker({
         className="flex flex-nowrap gap-2 overflow-x-auto pb-1"
       >
         {SLIDE_TYPES_ORDER.map((type) => {
-          const selected = type === value;
+          const selected = type === value && value !== "custom";
           return (
             <button
               key={type}
@@ -227,6 +267,52 @@ export function SlideTemplatePicker({
             </button>
           );
         })}
+        {customTemplates.map((t) => {
+          const selected = value === "custom" && customTemplateId === t.id;
+          return (
+            <button
+              key={t.id}
+              type="button"
+              role="radio"
+              aria-checked={selected}
+              aria-controls={`${id}-caption`}
+              onClick={() => onSelectCustom?.(t.id)}
+              className={cn(
+                "group flex w-[5.75rem] shrink-0 flex-col items-center gap-1.5 rounded-lg border p-1.5 text-center transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-vdidBlue focus-visible:ring-offset-1",
+                selected
+                  ? "border-vdidBlue ring-2 ring-vdidBlue/30"
+                  : "border-slate-200 hover:border-slate-400",
+              )}
+            >
+              <span
+                className={cn(
+                  "block aspect-[4/5] w-full overflow-hidden rounded-md ring-1 transition-shadow",
+                  selected ? "ring-vdidBlue/40" : "ring-slate-200",
+                )}
+              >
+                {customThumbs.get(t.id) ? (
+                  <img
+                    src={customThumbs.get(t.id)}
+                    alt=""
+                    className="h-full w-full object-cover"
+                  />
+                ) : (
+                  <div className="h-full w-full bg-slate-100" />
+                )}
+              </span>
+              <span
+                className={cn(
+                  "line-clamp-2 text-[11px] leading-tight",
+                  selected
+                    ? "font-medium text-vdidBlue"
+                    : "text-slate-600 group-hover:text-slate-900",
+                )}
+              >
+                {t.name}
+              </span>
+            </button>
+          );
+        })}
       </div>
 
       <p
@@ -234,11 +320,9 @@ export function SlideTemplatePicker({
         aria-live="polite"
         className="text-sm leading-relaxed text-slate-600"
       >
-        <span className="font-medium text-slate-900">
-          {SLIDE_TYPE_LABELS[value]}
-        </span>
+        <span className="font-medium text-slate-900">{captionLabel}</span>
         {" — "}
-        {SLIDE_TYPE_CAPTIONS[value]}
+        {captionText}
       </p>
     </div>
   );

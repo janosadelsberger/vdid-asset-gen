@@ -10,8 +10,30 @@ import {
   type ImageEditSettings,
   drawEditedImageCover,
 } from "@/lib/image-edit";
+import {
+  defaultContentForTemplate,
+  type CustomSlideImageSlot,
+  type CustomTemplate,
+} from "@/lib/custom-template";
+import { renderCustomTemplateToContext } from "@/lib/custom-template-render";
+import {
+  FONT,
+  LAB_BAND,
+  LAB_BG,
+  LAB_BLUE,
+  LAB_MUTED,
+  LAB_TEXT,
+} from "@/lib/lab-theme";
 
 export type { ImageEditSettings };
+export {
+  FONT,
+  LAB_BAND,
+  LAB_BG,
+  LAB_BLUE,
+  LAB_MUTED,
+  LAB_TEXT,
+} from "@/lib/lab-theme";
 
 export type SlideType =
   | "title"
@@ -20,7 +42,8 @@ export type SlideType =
   | "eventPhoto"
   | "fullImage"
   | "coBranded"
-  | "freeform";
+  | "freeform"
+  | "custom";
 
 export type LabSlide = {
   id: string;
@@ -35,6 +58,10 @@ export type LabSlide = {
   imageUrl?: string | null;
   partnerLogoUrl?: string | null;
   imageEdits?: ImageEditSettings;
+  /** Custom template slide */
+  customTemplateId?: string;
+  fields?: Record<string, string>;
+  images?: Record<string, CustomSlideImageSlot>;
 };
 
 /** Minimal image shape shared by the DOM (`HTMLImageElement`) and node-canvas. */
@@ -52,6 +79,7 @@ export type RenderAssets = {
   logoWhite?: RenderImage | null;
   slideImages: Map<string, RenderImage>;
   partnerLogos: Map<string, RenderImage>;
+  customTemplates?: Map<string, CustomTemplate>;
 };
 
 /** Luminance threshold: below → white logo, above → dark logo. */
@@ -62,13 +90,6 @@ export type SlideDims = {
   height: number;
   topUiSafeInsetRatio?: number;
 };
-
-export const LAB_BG = "#F0F0F0";
-export const LAB_TEXT = "#1A1A1A";
-export const LAB_MUTED = "#5A5A5A";
-export const LAB_BLUE = "#0A2CD9";
-export const LAB_BAND = "#1A1A1A";
-export const FONT = "Roboto, system-ui, sans-serif";
 
 type Ctx = CanvasRenderingContext2D;
 
@@ -809,12 +830,35 @@ export function renderLabSlideToContext(
     ? assets.partnerLogos.get(slide.partnerLogoUrl) ?? null
     : null;
 
-  if (slide.type !== "fullImage") {
+  if (slide.type !== "fullImage" && slide.type !== "custom") {
     ctx.fillStyle = LAB_BG;
     ctx.fillRect(0, 0, dims.width, dims.height);
   }
 
   switch (slide.type) {
+    case "custom": {
+      const templateId = slide.customTemplateId;
+      const template = templateId
+        ? assets.customTemplates?.get(templateId)
+        : undefined;
+      if (!template) {
+        ctx.fillStyle = LAB_BG;
+        ctx.fillRect(0, 0, dims.width, dims.height);
+        ctx.fillStyle = LAB_MUTED;
+        ctx.font = `400 ${32 * layout.scale}px ${FONT}`;
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText("Vorlage nicht gefunden", dims.width / 2, dims.height / 2);
+        break;
+      }
+      const defaults = defaultContentForTemplate(template);
+      const content = {
+        fields: { ...defaults.fields, ...slide.fields },
+        images: { ...defaults.images, ...slide.images },
+      };
+      renderCustomTemplateToContext(ctx, template, content, dims, assets);
+      break;
+    }
     case "title":
       drawTitleSlide(ctx, slide, layout, assets.logo);
       break;

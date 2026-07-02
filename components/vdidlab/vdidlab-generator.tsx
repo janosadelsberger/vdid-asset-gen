@@ -46,6 +46,15 @@ import { PostSlideOrderBar } from "@/components/vdidlab/post-slide-order-bar";
 import {
   SlideTemplatePicker,
 } from "@/components/vdidlab/slide-template-picker";
+import { CustomTemplateFields } from "@/components/vdidlab/custom-template-fields";
+import { TemplateEditorModal } from "@/components/vdidlab/template-editor/template-editor-modal";
+import {
+  defaultContentForTemplate,
+  loadCustomTemplatesFromStorage,
+  saveCustomTemplatesToStorage,
+  type CustomSlideImageSlot,
+  type CustomTemplate,
+} from "@/lib/custom-template";
 
 export type { LabSlide, SlideType };
 export type { LabFormatKey } from "@/lib/lab-formats";
@@ -121,12 +130,77 @@ const FORMAT_LINE_OPTIONS = [
   "14. VDID Designer's Breakfast",
 ] as const;
 
-function formatLineSelectOptions(current: string | undefined): string[] {
-  const value = current?.trim() ?? "";
-  if (value && !FORMAT_LINE_OPTIONS.includes(value as (typeof FORMAT_LINE_OPTIONS)[number])) {
-    return [value, ...FORMAT_LINE_OPTIONS];
+function revokeCustomSlideImages(slide: LabSlide) {
+  if (!slide.images) return;
+  for (const slot of Object.values(slide.images)) {
+    revokeBlobUrl(slot.url);
   }
-  return [...FORMAT_LINE_OPTIONS];
+}
+
+function collectCustomImageUrls(
+  slides: LabSlide[],
+  templates: Map<string, CustomTemplate>,
+): { photoUrls: Set<string>; partnerUrls: Set<string> } {
+  const photoUrls = new Set<string>();
+  const partnerUrls = new Set<string>();
+  for (const slide of slides) {
+    if (slide.type !== "custom" || !slide.images || !slide.customTemplateId) continue;
+    const template = templates.get(slide.customTemplateId);
+    if (!template) continue;
+    for (const el of template.elements) {
+      if (el.kind !== "image" && el.kind !== "partnerLogo") continue;
+      const url = slide.images[el.slot]?.url;
+      if (!url) continue;
+      if (el.kind === "partnerLogo") partnerUrls.add(url);
+      else photoUrls.add(url);
+    }
+  }
+  return { photoUrls, partnerUrls };
+}
+
+function createCustomSlide(
+  templateId: string,
+  templates: CustomTemplate[],
+): LabSlide {
+  const template = templates.find((t) => t.id === templateId);
+  const content = template
+    ? defaultContentForTemplate(template)
+    : { fields: {}, images: {} };
+  return {
+    id: crypto.randomUUID(),
+    type: "custom",
+    customTemplateId: templateId,
+    fields: content.fields,
+    images: content.images,
+    formatLabel: "",
+    heading: "",
+    body: "",
+    dateLine: "",
+    name: "",
+    role: "",
+    contact: "",
+    imageUrl: null,
+    partnerLogoUrl: null,
+  };
+}
+
+function slidesForStorage(slides: LabSlide[]): LabSlide[] {
+  return slides.map((s) => ({
+    ...s,
+    imageUrl: s.imageUrl?.startsWith("blob:") ? null : s.imageUrl,
+    partnerLogoUrl: s.partnerLogoUrl?.startsWith("blob:") ? null : s.partnerLogoUrl,
+    images: s.images
+      ? Object.fromEntries(
+          Object.entries(s.images).map(([key, slot]) => [
+            key,
+            {
+              ...slot,
+              url: slot.url?.startsWith("blob:") ? null : slot.url,
+            },
+          ]),
+        )
+      : undefined,
+  }));
 }
 
 function createSlide(type: SlideType): LabSlide {
@@ -188,14 +262,10 @@ type StoredDeck = {
 };
 
 function serializeDeck(slides: LabSlide[], captions: CaptionSet): string {
-  const slidesForStorage = slides.map((s) => ({
-    ...s,
-    imageUrl: s.imageUrl?.startsWith("blob:") ? null : s.imageUrl,
-    partnerLogoUrl: s.partnerLogoUrl?.startsWith("blob:")
-      ? null
-      : s.partnerLogoUrl,
-  }));
-  return JSON.stringify({ slides: slidesForStorage, captions } satisfies StoredDeck);
+  return JSON.stringify({
+    slides: slidesForStorage(slides),
+    captions,
+  } satisfies StoredDeck);
 }
 
 function parseStoredDeck(raw: string): StoredDeck | null {
@@ -217,6 +287,9 @@ function parseStoredDeck(raw: string): StoredDeck | null {
         imageUrl: s.imageUrl ?? null,
         partnerLogoUrl: s.partnerLogoUrl ?? null,
         imageEdits: s.imageEdits,
+        customTemplateId: s.customTemplateId,
+        fields: s.fields,
+        images: s.images,
       }));
     const legacyDeckTitle =
       typeof (o as { deckTitle?: unknown }).deckTitle === "string"
@@ -287,11 +360,21 @@ async function loadImageFromUrl(url: string): Promise<HTMLImageElement> {
 function deckExportTitle(slides: LabSlide[]): string {
   const firstHeading = slides.find((s) => s.heading?.trim())?.heading?.trim();
   if (firstHeading) return stripMarkdown(firstHeading);
+  for (const slide of slides) {
+    if (slide.type === "custom" && slide.fields) {
+      const first = Object.values(slide.fields).find((v) => v.trim());
+      if (first) return stripMarkdown(first);
+    }
+  }
   return "vdid-lab-deck";
 }
 
 function applySlideTypeChange(slide: LabSlide, newType: SlideType): LabSlide {
-  if (slide.type === newType) return slide;
+  if (slide.type === newType && newType !== "custom") return slide;
+  if (slide.type === "custom") {
+    revokeCustomSlideImages(slide);
+  }
+  if (newType === "custom") return slide;
 
   const defaults = createSlide(newType);
   const supportsImage =
@@ -325,6 +408,9 @@ function applySlideTypeChange(slide: LabSlide, newType: SlideType): LabSlide {
     imageUrl: supportsImage ? slide.imageUrl ?? null : null,
     partnerLogoUrl: supportsPartner ? slide.partnerLogoUrl ?? null : null,
     imageEdits: supportsImage ? slide.imageEdits : undefined,
+    customTemplateId: undefined,
+    fields: undefined,
+    images: undefined,
   };
 }
 
@@ -389,6 +475,7 @@ export function VdidLabGenerator() {
   const logoWhiteRef = React.useRef<HTMLImageElement | null>(null);
   const slideImagesRef = React.useRef<Map<string, HTMLImageElement>>(new Map());
   const partnerLogosRef = React.useRef<Map<string, HTMLImageElement>>(new Map());
+  const customTemplatesRef = React.useRef<Map<string, CustomTemplate>>(new Map());
   const postFormRef = React.useRef<HTMLDivElement>(null);
   const slidesRef = React.useRef(slides);
   slidesRef.current = slides;
@@ -404,6 +491,9 @@ export function VdidLabGenerator() {
     height: number;
   } | null>(null);
   const [previewRevision, setPreviewRevision] = React.useState(0);
+  const [customTemplates, setCustomTemplates] = React.useState<CustomTemplate[]>([]);
+  const [templateEditorOpen, setTemplateEditorOpen] = React.useState(false);
+  const [customTemplatesHydrated, setCustomTemplatesHydrated] = React.useState(false);
 
   const bumpPreview = React.useCallback(() => {
     setPreviewRevision((revision) => revision + 1);
@@ -463,6 +553,32 @@ export function VdidLabGenerator() {
   }, [previewFormat, previewFormatOptions, exportFormatsEnabled.pdf]);
 
   React.useEffect(() => {
+    const loaded = loadCustomTemplatesFromStorage();
+    setCustomTemplates(loaded);
+    customTemplatesRef.current = new Map(loaded.map((t) => [t.id, t]));
+    setCustomTemplatesHydrated(true);
+  }, []);
+
+  React.useEffect(() => {
+    if (!customTemplatesHydrated) return;
+    customTemplatesRef.current = new Map(customTemplates.map((t) => [t.id, t]));
+    saveCustomTemplatesToStorage(customTemplates);
+    bumpPreview();
+  }, [customTemplates, customTemplatesHydrated, bumpPreview]);
+
+  const buildRenderAssets = React.useCallback((): RenderAssets | null => {
+    const logo = logoRef.current;
+    if (!logo) return null;
+    return {
+      logo,
+      logoWhite: logoWhiteRef.current,
+      slideImages: slideImagesRef.current,
+      partnerLogos: partnerLogosRef.current,
+      customTemplates: customTemplatesRef.current,
+    };
+  }, []);
+
+  React.useEffect(() => {
     try {
       const raw = localStorage.getItem(DECK_STORAGE_KEY);
       if (raw) {
@@ -493,6 +609,7 @@ export function VdidLabGenerator() {
       for (const slide of slidesRef.current) {
         revokeBlobUrl(slide.imageUrl);
         revokeBlobUrl(slide.partnerLogoUrl);
+        revokeCustomSlideImages(slide);
       }
     };
   }, []);
@@ -516,6 +633,8 @@ export function VdidLabGenerator() {
     const urls = new Set(
       slides.map((s) => s.imageUrl).filter((u): u is string => !!u),
     );
+    const custom = collectCustomImageUrls(slides, customTemplatesRef.current);
+    for (const url of custom.photoUrls) urls.add(url);
     for (const [url] of slideImagesRef.current) {
       if (!urls.has(url)) slideImagesRef.current.delete(url);
     }
@@ -532,6 +651,8 @@ export function VdidLabGenerator() {
     const urls = new Set(
       slides.map((s) => s.partnerLogoUrl).filter((u): u is string => !!u),
     );
+    const custom = collectCustomImageUrls(slides, customTemplatesRef.current);
+    for (const url of custom.partnerUrls) urls.add(url);
     for (const [url] of partnerLogosRef.current) {
       if (!urls.has(url)) partnerLogosRef.current.delete(url);
     }
@@ -575,11 +696,81 @@ export function VdidLabGenerator() {
     setSelectedId(slide.id);
   };
 
+  const changeCustomTemplate = (id: string, templateId: string) => {
+    setSlides((prev) =>
+      prev.map((s) => {
+        if (s.id !== id) return s;
+        revokeCustomSlideImages(s);
+        const next = createCustomSlide(templateId, customTemplates);
+        return { ...next, id: s.id };
+      }),
+    );
+  };
+
+  const updateCustomField = (slideId: string, field: string, value: string) => {
+    setSlides((prev) =>
+      prev.map((s) =>
+        s.id === slideId
+          ? { ...s, fields: { ...s.fields, [field]: value } }
+          : s,
+      ),
+    );
+  };
+
+  const handleCustomImageUpload = (
+    slot: string,
+    kind: "image" | "partnerLogo",
+    file: File | undefined,
+  ) => {
+    if (!file || !file.type.startsWith("image/") || !selectedSlide) return;
+    const url = URL.createObjectURL(file);
+    const prevUrl = selectedSlide.images?.[slot]?.url;
+    const mapRef = kind === "partnerLogo" ? partnerLogosRef : slideImagesRef;
+
+    void loadImageFromUrl(url).then((img) => {
+      mapRef.current.set(url, img);
+      const nextImages: Record<string, CustomSlideImageSlot> = {
+        ...(selectedSlide.images ?? {}),
+        [slot]: {
+          url,
+          edits: kind === "image" ? DEFAULT_IMAGE_EDIT_SETTINGS : undefined,
+        },
+      };
+      updateSlide(selectedSlide.id, { images: nextImages });
+      revokeBlobUrl(prevUrl);
+      bumpPreview();
+    });
+  };
+
+  const clearCustomImage = (
+    slot: string,
+    kind: "image" | "partnerLogo",
+  ) => {
+    if (!selectedSlide?.images) return;
+    const prevUrl = selectedSlide.images[slot]?.url;
+    const mapRef = kind === "partnerLogo" ? partnerLogosRef : slideImagesRef;
+    if (prevUrl) mapRef.current.delete(prevUrl);
+    const nextImages = { ...selectedSlide.images, [slot]: { url: null } };
+    updateSlide(selectedSlide.id, { images: nextImages });
+    revokeBlobUrl(prevUrl);
+    bumpPreview();
+  };
+
   const duplicateSlide = (id: string) => {
     setSlides((prev) => {
       const idx = prev.findIndex((s) => s.id === id);
       if (idx < 0) return prev;
-      const copy = { ...prev[idx], id: crypto.randomUUID() };
+      const src = prev[idx];
+      const copy: LabSlide = {
+        ...src,
+        id: crypto.randomUUID(),
+        fields: src.fields ? { ...src.fields } : undefined,
+        images: src.images
+          ? Object.fromEntries(
+              Object.entries(src.images).map(([k, v]) => [k, { ...v }]),
+            )
+          : undefined,
+      };
       const next = [...prev];
       next.splice(idx + 1, 0, copy);
       return next;
@@ -593,6 +784,7 @@ export function VdidLabGenerator() {
       if (removed) {
         revokeBlobUrl(removed.imageUrl);
         revokeBlobUrl(removed.partnerLogoUrl);
+        revokeCustomSlideImages(removed);
       }
       const next = prev.filter((s) => s.id !== id);
       if (selectedId === id) setSelectedId(next[0]?.id ?? null);
@@ -691,8 +883,8 @@ export function VdidLabGenerator() {
   };
 
   const handleDownloadAllAssets = async () => {
-    const logo = logoRef.current;
-    if (!logo) {
+    const assets = buildRenderAssets();
+    if (!assets) {
       setExportHint("Logo wird noch geladen …");
       return;
     }
@@ -723,12 +915,6 @@ export function VdidLabGenerator() {
     const zip = new JSZip();
     const downloadDate = new Date();
     const offscreen = document.createElement("canvas");
-    const assets: RenderAssets = {
-      logo,
-      logoWhite: logoWhiteRef.current,
-      slideImages: slideImagesRef.current,
-      partnerLogos: partnerLogosRef.current,
-    };
 
     const pngArchiveEntries: {
       formatKey: LabFormatKey;
@@ -852,16 +1038,11 @@ export function VdidLabGenerator() {
 
   const openLightboxForSlide = (slideId: string) => {
     const slide = slides.find((s) => s.id === slideId);
-    const logo = logoRef.current;
-    if (!slide || !logo || !logoLoaded) return;
+    const assets = buildRenderAssets();
+    if (!slide || !assets || !logoLoaded) return;
 
     const canvas = document.createElement("canvas");
-    renderLabSlide(canvas, slide, previewFormat, {
-      logo,
-      logoWhite: logoWhiteRef.current,
-      slideImages: slideImagesRef.current,
-      partnerLogos: partnerLogosRef.current,
-    });
+    renderLabSlide(canvas, slide, previewFormat, assets);
     setLightboxUrl(canvas.toDataURL("image/png"));
   };
 
@@ -870,26 +1051,40 @@ export function VdidLabGenerator() {
     postFormRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
   };
 
+  const isCustomSlide = selectedSlide?.type === "custom";
+  const selectedCustomTemplate =
+    isCustomSlide && selectedSlide?.customTemplateId
+      ? customTemplates.find((t) => t.id === selectedSlide.customTemplateId)
+      : null;
+
   const showFormatLabel =
-    selectedSlide?.type === "title" ||
-    selectedSlide?.type === "eventPhoto" ||
-    selectedSlide?.type === "coBranded" ||
-    selectedSlide?.type === "freeform";
-  const showHeading = selectedSlide?.type !== "fullImage";
+    !isCustomSlide &&
+    (selectedSlide?.type === "title" ||
+      selectedSlide?.type === "eventPhoto" ||
+      selectedSlide?.type === "coBranded" ||
+      selectedSlide?.type === "freeform");
+  const showHeading = !isCustomSlide && selectedSlide?.type !== "fullImage";
   const showImage =
-    selectedSlide?.type === "eventPhoto" ||
-    selectedSlide?.type === "fullImage" ||
-    selectedSlide?.type === "coBranded" ||
-    selectedSlide?.type === "freeform";
-  const showPartnerLogo = selectedSlide?.type === "coBranded";
+    !isCustomSlide &&
+    (selectedSlide?.type === "eventPhoto" ||
+      selectedSlide?.type === "fullImage" ||
+      selectedSlide?.type === "coBranded" ||
+      selectedSlide?.type === "freeform");
+  const showPartnerLogo = !isCustomSlide && selectedSlide?.type === "coBranded";
   const showDateLine =
-    selectedSlide?.type === "title" ||
-    selectedSlide?.type === "eventPhoto" ||
-    selectedSlide?.type === "coBranded";
-  const showNameRole = selectedSlide?.type === "quote";
+    !isCustomSlide &&
+    (selectedSlide?.type === "title" ||
+      selectedSlide?.type === "eventPhoto" ||
+      selectedSlide?.type === "coBranded");
+  const showNameRole = !isCustomSlide && selectedSlide?.type === "quote";
   const showPresenter =
-    selectedSlide?.type === "eventPhoto" || selectedSlide?.type === "freeform";
-  const showContact = selectedSlide?.type === "cta";
+    !isCustomSlide &&
+    (selectedSlide?.type === "eventPhoto" || selectedSlide?.type === "freeform");
+  const showContact = !isCustomSlide && selectedSlide?.type === "cta";
+
+  const editorAspect =
+    FORMAT_CONFIG[previewFormat].width / FORMAT_CONFIG[previewFormat].height;
+  const editorRenderAssets = buildRenderAssets();
 
   const slidePendingDelete = slides.find((s) => s.id === slideDeleteId);
   const slidePendingDeleteIndex =
@@ -898,9 +1093,14 @@ export function VdidLabGenerator() {
       : 0;
   const slideDeleteDescription = slidePendingDelete
     ? `Slide ${slidePendingDeleteIndex}${
-        slidePendingDelete.heading?.trim()
-          ? ` („${stripMarkdown(slidePendingDelete.heading).slice(0, 60)}“)`
-          : ""
+        slidePendingDelete.type === "custom" && slidePendingDelete.fields
+          ? (() => {
+              const t = Object.values(slidePendingDelete.fields).find((v) => v.trim());
+              return t ? ` („${stripMarkdown(t).slice(0, 60)}“)` : "";
+            })()
+          : slidePendingDelete.heading?.trim()
+            ? ` („${stripMarkdown(slidePendingDelete.heading).slice(0, 60)}“)`
+            : ""
       } wird unwiderruflich entfernt.`
     : "";
 
@@ -910,6 +1110,15 @@ export function VdidLabGenerator() {
         <Card>
           <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <CardTitle>Vorschau</CardTitle>
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => setTemplateEditorOpen(true)}
+              >
+                Vorlagen bearbeiten
+              </Button>
             {previewFormatOptions.length > 0 && (
               <Tabs
                 value={previewFormat}
@@ -926,6 +1135,7 @@ export function VdidLabGenerator() {
                 </TabsList>
               </Tabs>
             )}
+            </div>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="rounded-md border border-slate-200 bg-slate-50 p-2">
@@ -937,6 +1147,7 @@ export function VdidLabGenerator() {
                 logoWhiteRef={logoWhiteRef}
                 slideImagesRef={slideImagesRef}
                 partnerLogosRef={partnerLogosRef}
+                customTemplatesRef={customTemplatesRef}
                 logoLoaded={logoLoaded}
                 previewRevision={previewRevision}
                 maxHeight={480}
@@ -983,37 +1194,48 @@ export function VdidLabGenerator() {
                 <Label>Vorlage</Label>
                 <SlideTemplatePicker
                   value={selectedSlide.type}
+                  customTemplateId={selectedSlide.customTemplateId}
+                  customTemplates={customTemplates}
+                  renderAssets={editorRenderAssets}
                   onChange={(type) =>
                     changeSlideType(selectedSlide.id, type)
                   }
+                  onSelectCustom={(templateId) =>
+                    changeCustomTemplate(selectedSlide.id, templateId)
+                  }
                 />
               </div>
+              {isCustomSlide && selectedCustomTemplate && (
+                <CustomTemplateFields
+                  slide={selectedSlide}
+                  template={selectedCustomTemplate}
+                  onFieldChange={(field, value) =>
+                    updateCustomField(selectedSlide.id, field, value)
+                  }
+                  onImageUpload={handleCustomImageUpload}
+                  onImageClear={clearCustomImage}
+                />
+              )}
                   {showFormatLabel && (
                     <div className="space-y-1 md:col-span-2">
                       <Label htmlFor="formatLabel">Formatzeile</Label>
-                      <select
+                      <Input
                         id="formatLabel"
+                        list="formatLabel-options"
                         value={selectedSlide.formatLabel ?? ""}
                         onChange={(e) =>
                           updateSlide(selectedSlide.id, {
                             formatLabel: e.target.value,
                           })
                         }
-                        className="flex h-10 w-full max-w-md rounded-md border border-input bg-background px-3 py-2 text-sm text-slate-900 ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-                      >
-                        {!selectedSlide.formatLabel?.trim() && (
-                          <option value="" disabled>
-                            Format wählen…
-                          </option>
-                        )}
-                        {formatLineSelectOptions(selectedSlide.formatLabel).map(
-                          (option) => (
-                            <option key={option} value={option}>
-                              {option}
-                            </option>
-                          ),
-                        )}
-                      </select>
+                        placeholder="Vorlage wählen oder Freitext eingeben …"
+                        className="max-w-md"
+                      />
+                      <datalist id="formatLabel-options">
+                        {FORMAT_LINE_OPTIONS.map((option) => (
+                          <option key={option} value={option} />
+                        ))}
+                      </datalist>
                     </div>
                   )}
                   {showHeading && (
@@ -1185,6 +1407,7 @@ export function VdidLabGenerator() {
                   for (const slide of slidesRef.current) {
                     revokeBlobUrl(slide.imageUrl);
                     revokeBlobUrl(slide.partnerLogoUrl);
+                    revokeCustomSlideImages(slide);
                   }
                   setSlides([createSlide("eventPhoto")]);
                   setCaptions(EMPTY_CAPTIONS);
@@ -1217,6 +1440,21 @@ export function VdidLabGenerator() {
           )}
         </div>
       </div>
+
+      <TemplateEditorModal
+        open={templateEditorOpen}
+        onClose={() => setTemplateEditorOpen(false)}
+        templates={customTemplates}
+        onTemplatesChange={setCustomTemplates}
+        assets={
+          editorRenderAssets ?? {
+            logo: logoRef.current!,
+            slideImages: slideImagesRef.current,
+            partnerLogos: partnerLogosRef.current,
+          }
+        }
+        editorAspect={editorAspect}
+      />
 
       <ImageEditModal
         open={photoEditModalOpen && !!selectedSlide?.imageUrl}
