@@ -72,15 +72,26 @@ export type RenderImage = CanvasImageSource & {
   height: number;
 };
 
+export type LabLogoStyle = "color" | "bw";
+
 export type RenderAssets = {
-  /** Dark logo for light backgrounds (default for text slides). */
+  /** User preference: color (rgb) or black-and-white (sw) for light backgrounds. */
+  logoStyle: LabLogoStyle;
+  /** Primary logo for light backgrounds — rgb or sw per {@link logoStyle}. */
   logo: RenderImage;
-  /** White logo for dark backgrounds (full-image slides). */
+  /** White / negative logo for dark backgrounds (full-image auto contrast). */
   logoWhite?: RenderImage | null;
   slideImages: Map<string, RenderImage>;
   partnerLogos: Map<string, RenderImage>;
   customTemplates?: Map<string, CustomTemplate>;
 };
+
+export function primaryLogoForStyle(
+  style: LabLogoStyle,
+  logos: { rgb: RenderImage; bw: RenderImage },
+): RenderImage {
+  return style === "color" ? logos.rgb : logos.bw;
+}
 
 /** Luminance threshold: below → white logo, above → dark logo. */
 const LOGO_REGION_LUMINANCE_THRESHOLD = 0.45;

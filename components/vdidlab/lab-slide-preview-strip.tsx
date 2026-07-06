@@ -3,7 +3,7 @@
 import React from "react";
 import { LabSlidePreview } from "@/components/vdidlab/lab-slide-preview";
 import type { CustomTemplate } from "@/lib/custom-template";
-import type { LabSlide } from "@/lib/lab-slide-render";
+import type { LabLogoStyle, LabSlide } from "@/lib/lab-slide-render";
 import { cn } from "@/lib/utils";
 
 type PreviewFormat = {
@@ -21,6 +21,7 @@ export type LabSlidePreviewStripProps = {
   slideImagesRef: React.RefObject<Map<string, HTMLImageElement>>;
   partnerLogosRef: React.RefObject<Map<string, HTMLImageElement>>;
   customTemplatesRef?: React.RefObject<Map<string, CustomTemplate>>;
+  logoStyle?: LabLogoStyle;
   logoLoaded: boolean;
   previewRevision: number;
   maxHeight?: number;
@@ -40,6 +41,7 @@ export function LabSlidePreviewStrip({
   slideImagesRef,
   partnerLogosRef,
   customTemplatesRef,
+  logoStyle = "color",
   logoLoaded,
   previewRevision,
   maxHeight = 480,
@@ -90,6 +92,7 @@ export function LabSlidePreviewStrip({
               slideImagesRef={slideImagesRef}
               partnerLogosRef={partnerLogosRef}
               customTemplatesRef={customTemplatesRef}
+              logoStyle={logoStyle}
               logoLoaded={logoLoaded}
               renderRevision={previewRevision}
               maxHeight={maxHeight}

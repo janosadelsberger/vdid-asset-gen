@@ -5,6 +5,7 @@ import type { CustomTemplate } from "@/lib/custom-template";
 import {
   renderLabSlideToContext,
   type LabSlide,
+  type LabLogoStyle,
   type RenderAssets,
 } from "@/lib/lab-slide-render";
 import { cn } from "@/lib/utils";
@@ -19,6 +20,7 @@ export type LabSlidePreviewProps = {
   slideImagesRef: React.RefObject<Map<string, HTMLImageElement>>;
   partnerLogosRef: React.RefObject<Map<string, HTMLImageElement>>;
   customTemplatesRef?: React.RefObject<Map<string, CustomTemplate>>;
+  logoStyle?: LabLogoStyle;
   logoLoaded: boolean;
   /** Bump when async images finish loading into the ref maps. */
   renderRevision?: number;
@@ -44,6 +46,7 @@ export const LabSlidePreview = React.forwardRef<
     slideImagesRef,
     partnerLogosRef,
     customTemplatesRef,
+    logoStyle = "color",
     logoLoaded,
     renderRevision = 0,
     maxHeight = 480,
@@ -70,6 +73,7 @@ export const LabSlidePreview = React.forwardRef<
     canvas.height = height;
 
     const assets: RenderAssets = {
+      logoStyle,
       logo,
       logoWhite: logoWhiteRef?.current ?? null,
       slideImages: slideImagesRef.current ?? new Map(),
@@ -90,6 +94,7 @@ export const LabSlidePreview = React.forwardRef<
     topUiSafeInsetRatio,
     logoLoaded,
     renderRevision,
+    logoStyle,
     logoRef,
     logoWhiteRef,
     slideImagesRef,

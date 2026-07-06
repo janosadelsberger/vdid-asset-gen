@@ -10,7 +10,7 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
-import { loadRecoloredLogo, loadWhiteLogo } from "@/lib/lab-logo";
+import { loadRgbLogo, loadSwLogo, loadWhiteLogo } from "@/lib/lab-logo";
 import { exportAssetBasename } from "@/lib/export-naming";
 import {
   addCaptionsToZip,
@@ -33,8 +33,10 @@ import {
 import {
   renderLabSlideToContext,
   type LabSlide,
+  type LabLogoStyle,
   type SlideType,
   type RenderAssets,
+  primaryLogoForStyle,
 } from "@/lib/lab-slide-render";
 import {
   MARKDOWN_FORMAT_HINT,
@@ -123,12 +125,28 @@ function allLabFormatsEnabled(): Record<LabFormatKey, boolean> {
 }
 
 const DECK_STORAGE_KEY = "vdid-lab-deck-v1";
+const LOGO_STYLE_STORAGE_KEY = "vdid-lab-logo-style-v1";
 
 const FORMAT_LINE_OPTIONS = [
   "VDID Fortbildung",
   "VDID Design.Wissen.Diskurs.",
   "14. VDID Designer's Breakfast",
 ] as const;
+
+const FORMAT_LINE_OTHER = "__other__";
+
+function formatLinePresetValue(formatLabel: string | undefined): string {
+  const value = formatLabel?.trim() ?? "";
+  if (FORMAT_LINE_OPTIONS.includes(value as (typeof FORMAT_LINE_OPTIONS)[number])) {
+    return value;
+  }
+  return "";
+}
+
+function isFormatLineCustom(formatLabel: string | undefined): boolean {
+  const value = formatLabel?.trim() ?? "";
+  return value !== "" && !FORMAT_LINE_OPTIONS.includes(value as (typeof FORMAT_LINE_OPTIONS)[number]);
+}
 
 function revokeCustomSlideImages(slide: LabSlide) {
   if (!slide.images) return;
@@ -472,6 +490,8 @@ export function VdidLabGenerator() {
   const [logoLoaded, setLogoLoaded] = React.useState(false);
   const [logoError, setLogoError] = React.useState<string | null>(null);
   const logoRef = React.useRef<HTMLImageElement | null>(null);
+  const logoRgbRef = React.useRef<HTMLImageElement | null>(null);
+  const logoBwRef = React.useRef<HTMLImageElement | null>(null);
   const logoWhiteRef = React.useRef<HTMLImageElement | null>(null);
   const slideImagesRef = React.useRef<Map<string, HTMLImageElement>>(new Map());
   const partnerLogosRef = React.useRef<Map<string, HTMLImageElement>>(new Map());
@@ -491,6 +511,8 @@ export function VdidLabGenerator() {
     height: number;
   } | null>(null);
   const [previewRevision, setPreviewRevision] = React.useState(0);
+  const [formatLineOtherMode, setFormatLineOtherMode] = React.useState(false);
+  const [logoStyle, setLogoStyle] = React.useState<LabLogoStyle>("color");
   const [customTemplates, setCustomTemplates] = React.useState<CustomTemplate[]>([]);
   const [templateEditorOpen, setTemplateEditorOpen] = React.useState(false);
   const [customTemplatesHydrated, setCustomTemplatesHydrated] = React.useState(false);
@@ -532,6 +554,11 @@ export function VdidLabGenerator() {
     slides.find((s) => s.id === selectedId) ?? slides[0] ?? null;
 
   React.useEffect(() => {
+    if (!selectedSlide) return;
+    setFormatLineOtherMode(isFormatLineCustom(selectedSlide.formatLabel));
+  }, [selectedSlide?.id]);
+
+  React.useEffect(() => {
     if (!selectedId && slides.length > 0) {
       setSelectedId(slides[0].id);
     }
@@ -566,17 +593,51 @@ export function VdidLabGenerator() {
     bumpPreview();
   }, [customTemplates, customTemplatesHydrated, bumpPreview]);
 
+  React.useEffect(() => {
+    try {
+      const stored = localStorage.getItem(LOGO_STYLE_STORAGE_KEY);
+      if (stored === "color" || stored === "bw") {
+        setLogoStyle(stored);
+      }
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
+  React.useEffect(() => {
+    try {
+      localStorage.setItem(LOGO_STYLE_STORAGE_KEY, logoStyle);
+    } catch {
+      /* ignore */
+    }
+  }, [logoStyle]);
+
+  React.useEffect(() => {
+    const rgb = logoRgbRef.current;
+    const bw = logoBwRef.current;
+    const active =
+      logoStyle === "color" ? rgb : bw;
+    if (active) {
+      logoRef.current = active as HTMLImageElement;
+      bumpPreview();
+    }
+  }, [logoStyle, logoLoaded, bumpPreview]);
+
   const buildRenderAssets = React.useCallback((): RenderAssets | null => {
-    const logo = logoRef.current;
-    if (!logo) return null;
+    const rgb = logoRgbRef.current;
+    const bw = logoBwRef.current;
+    if (!rgb || !bw) return null;
+    const logo = primaryLogoForStyle(logoStyle, { rgb, bw });
+    logoRef.current = logo as HTMLImageElement;
     return {
+      logoStyle,
       logo,
       logoWhite: logoWhiteRef.current,
       slideImages: slideImagesRef.current,
       partnerLogos: partnerLogosRef.current,
       customTemplates: customTemplatesRef.current,
     };
-  }, []);
+  }, [logoStyle]);
 
   React.useEffect(() => {
     try {
@@ -615,10 +676,12 @@ export function VdidLabGenerator() {
   }, []);
 
   React.useEffect(() => {
-    Promise.all([loadRecoloredLogo(), loadWhiteLogo()])
-      .then(([darkLogo, whiteLogo]) => {
-        logoRef.current = darkLogo;
+    Promise.all([loadRgbLogo(), loadSwLogo(), loadWhiteLogo()])
+      .then(([rgbLogo, bwLogo, whiteLogo]) => {
+        logoRgbRef.current = rgbLogo;
+        logoBwRef.current = bwLogo;
         logoWhiteRef.current = whiteLogo;
+        logoRef.current = logoStyle === "color" ? rgbLogo : bwLogo;
         setLogoLoaded(true);
         setLogoError(null);
         bumpPreview();
@@ -1148,6 +1211,7 @@ export function VdidLabGenerator() {
                 slideImagesRef={slideImagesRef}
                 partnerLogosRef={partnerLogosRef}
                 customTemplatesRef={customTemplatesRef}
+                logoStyle={logoStyle}
                 logoLoaded={logoLoaded}
                 previewRevision={previewRevision}
                 maxHeight={480}
@@ -1156,6 +1220,24 @@ export function VdidLabGenerator() {
                 onSlideZoom={openLightboxForSlide}
                 onDeleteSlide={requestDeleteSlide}
               />
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="logoStyle">Logo</Label>
+              <select
+                id="logoStyle"
+                value={logoStyle}
+                onChange={(e) =>
+                  setLogoStyle(e.target.value as LabLogoStyle)
+                }
+                className="flex h-10 w-full max-w-xs rounded-md border border-input bg-background px-3 py-2 text-sm text-slate-900 ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+              >
+                <option value="color">Farbig</option>
+                <option value="bw">Schwarzweiß</option>
+              </select>
+              <p className="text-xs text-slate-500">
+                Bei „Foto Vollbild“ wird automatisch die Variante mit dem besten
+                Kontrast zum Hintergrund gewählt.
+              </p>
             </div>
           </CardContent>
         </Card>
@@ -1219,23 +1301,61 @@ export function VdidLabGenerator() {
                   {showFormatLabel && (
                     <div className="space-y-1 md:col-span-2">
                       <Label htmlFor="formatLabel">Formatzeile</Label>
-                      <Input
+                      <select
                         id="formatLabel"
-                        list="formatLabel-options"
-                        value={selectedSlide.formatLabel ?? ""}
-                        onChange={(e) =>
-                          updateSlide(selectedSlide.id, {
-                            formatLabel: e.target.value,
-                          })
+                        value={
+                          formatLineOtherMode ||
+                          isFormatLineCustom(selectedSlide.formatLabel)
+                            ? FORMAT_LINE_OTHER
+                            : formatLinePresetValue(selectedSlide.formatLabel)
                         }
-                        placeholder="Vorlage wählen oder Freitext eingeben …"
-                        className="max-w-md"
-                      />
-                      <datalist id="formatLabel-options">
+                        onChange={(e) => {
+                          const choice = e.target.value;
+                          if (choice === FORMAT_LINE_OTHER) {
+                            setFormatLineOtherMode(true);
+                            if (
+                              !isFormatLineCustom(selectedSlide.formatLabel)
+                            ) {
+                              updateSlide(selectedSlide.id, {
+                                formatLabel: "",
+                              });
+                            }
+                          } else {
+                            setFormatLineOtherMode(false);
+                            updateSlide(selectedSlide.id, {
+                              formatLabel: choice,
+                            });
+                          }
+                        }}
+                        className="flex h-10 w-full max-w-md rounded-md border border-input bg-background px-3 py-2 text-sm text-slate-900 ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                      >
+                        {!selectedSlide.formatLabel?.trim() &&
+                          !formatLineOtherMode && (
+                          <option value="" disabled>
+                            Format wählen…
+                          </option>
+                        )}
                         {FORMAT_LINE_OPTIONS.map((option) => (
-                          <option key={option} value={option} />
+                          <option key={option} value={option}>
+                            {option}
+                          </option>
                         ))}
-                      </datalist>
+                        <option value={FORMAT_LINE_OTHER}>Andere</option>
+                      </select>
+                      {(formatLineOtherMode ||
+                        isFormatLineCustom(selectedSlide.formatLabel)) && (
+                        <Input
+                          id="formatLabel-custom"
+                          value={selectedSlide.formatLabel ?? ""}
+                          onChange={(e) =>
+                            updateSlide(selectedSlide.id, {
+                              formatLabel: e.target.value,
+                            })
+                          }
+                          placeholder="Eigene Formatzeile eingeben …"
+                          className="max-w-md"
+                        />
+                      )}
                     </div>
                   )}
                   {showHeading && (
@@ -1448,7 +1568,9 @@ export function VdidLabGenerator() {
         onTemplatesChange={setCustomTemplates}
         assets={
           editorRenderAssets ?? {
+            logoStyle,
             logo: logoRef.current!,
+            logoWhite: logoWhiteRef.current,
             slideImages: slideImagesRef.current,
             partnerLogos: partnerLogosRef.current,
           }
