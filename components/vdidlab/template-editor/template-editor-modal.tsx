@@ -7,13 +7,15 @@ import { CardTitle } from "@/components/ui/card";
 import {
   cloneTemplate,
   createDefaultTemplate,
+  editorCanvasSizePx,
   exportTemplatesJson,
   importTemplatesJsonFile,
   saveCustomTemplatesToStorage,
   type CustomTemplate,
   type TemplateElement,
 } from "@/lib/custom-template";
-import type { RenderAssets } from "@/lib/lab-slide-render";
+import { createBuiltinTemplatePreset } from "@/lib/builtin-template-presets";
+import type { RenderAssets, SlideType } from "@/lib/lab-slide-render";
 import { EditorCanvas } from "@/components/vdidlab/template-editor/editor-canvas";
 import {
   ElementProperties,
@@ -104,6 +106,16 @@ export function TemplateEditorModal({
     setSelectedElementId(null);
   };
 
+  const handleNewFromPreset = (slideType: string) => {
+    const t = createBuiltinTemplatePreset(
+      slideType as Exclude<SlideType, "custom">,
+      editorAspect,
+    );
+    persist([...templates, t]);
+    setSelectedTemplateId(t.id);
+    setSelectedElementId(null);
+  };
+
   const handleDuplicate = (id: string) => {
     const src = templates.find((t) => t.id === id);
     if (!src) return;
@@ -140,6 +152,8 @@ export function TemplateEditorModal({
   const selectedElement =
     selectedTemplate?.elements.find((el) => el.id === selectedElementId) ?? null;
 
+  const canvasSize = editorCanvasSizePx(editorAspect);
+
   if (!open || typeof document === "undefined") return null;
 
   return createPortal(
@@ -168,6 +182,7 @@ export function TemplateEditorModal({
                 setSelectedElementId(null);
               }}
               onNew={handleNew}
+              onNewFromPreset={handleNewFromPreset}
               onDuplicate={handleDuplicate}
               onDelete={handleDelete}
               onImport={handleImport}
@@ -228,6 +243,8 @@ export function TemplateEditorModal({
                 </div>
                 <ElementProperties
                   element={selectedElement}
+                  canvasWidthPx={canvasSize.width}
+                  canvasHeightPx={canvasSize.height}
                   onChange={(element) => {
                     updateTemplate({
                       ...selectedTemplate,

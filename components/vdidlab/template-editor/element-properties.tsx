@@ -9,36 +9,63 @@ import type {
   NormalizedBox,
   TemplateElement,
 } from "@/lib/custom-template";
-import { ELEMENT_KIND_LABELS } from "@/lib/custom-template";
+import {
+  ELEMENT_KIND_LABELS,
+  TEMPLATE_IMAGE_SLOT_OPTIONS,
+  TEMPLATE_TEXT_FIELD_OPTIONS,
+  boxToPixels,
+  isKnownImageSlotId,
+  isKnownTextFieldId,
+  pixelsToBox,
+} from "@/lib/custom-template";
+
+const selectClassName =
+  "flex h-9 w-full rounded-md border border-input bg-background px-2 text-sm text-slate-900";
 
 export type ElementPropertiesProps = {
   element: TemplateElement | null;
+  canvasWidthPx: number;
+  canvasHeightPx: number;
   onChange: (element: TemplateElement) => void;
 };
 
 function BoxFields({
   box,
+  canvasWidthPx,
+  canvasHeightPx,
   onChange,
 }: {
   box: NormalizedBox;
+  canvasWidthPx: number;
+  canvasHeightPx: number;
   onChange: (box: NormalizedBox) => void;
 }) {
-  const fields: (keyof NormalizedBox)[] = ["x", "y", "w", "h"];
-  const labels = { x: "X", y: "Y", w: "Breite", h: "Höhe" };
+  const px = boxToPixels(box, canvasWidthPx, canvasHeightPx);
+  const fields = [
+    { key: "x" as const, label: "X (px)" },
+    { key: "y" as const, label: "Y (px)" },
+    { key: "w" as const, label: "Breite (px)" },
+    { key: "h" as const, label: "Höhe (px)" },
+  ];
+
+  const updatePx = (key: keyof typeof px, raw: string) => {
+    const value = Number(raw);
+    if (!Number.isFinite(value)) return;
+    const next = { ...px, [key]: value };
+    onChange(pixelsToBox(next, canvasWidthPx, canvasHeightPx));
+  };
+
   return (
     <div className="grid grid-cols-2 gap-2">
-      {fields.map((key) => (
+      {fields.map(({ key, label }) => (
         <div key={key} className="space-y-1">
-          <Label className="text-xs">{labels[key]}</Label>
+          <Label className="text-xs">{label}</Label>
           <Input
             type="number"
-            step={0.01}
+            step={1}
             min={0}
-            max={1}
-            value={Math.round(box[key] * 1000) / 1000}
-            onChange={(e) =>
-              onChange({ ...box, [key]: Number(e.target.value) })
-            }
+            value={Math.round(px[key])}
+            onChange={(e) => updatePx(key, e.target.value)}
           />
         </div>
       ))}
@@ -46,7 +73,55 @@ function BoxFields({
   );
 }
 
-export function ElementProperties({ element, onChange }: ElementPropertiesProps) {
+function FieldIdSelect({
+  value,
+  options,
+  isKnown,
+  onSelect,
+  onCustomChange,
+}: {
+  value: string;
+  options: readonly { id: string; label: string }[];
+  isKnown: (id: string) => boolean;
+  onSelect: (id: string) => void;
+  onCustomChange: (id: string) => void;
+}) {
+  const custom = !isKnown(value);
+
+  return (
+    <div className="space-y-2">
+      <select
+        className={selectClassName}
+        value={custom ? "__custom__" : value}
+        onChange={(e) => {
+          const next = e.target.value;
+          if (next !== "__custom__") onSelect(next);
+        }}
+      >
+        {options.map((opt) => (
+          <option key={opt.id} value={opt.id}>
+            {opt.label}
+          </option>
+        ))}
+        <option value="__custom__">Benutzerdefiniert…</option>
+      </select>
+      {custom && (
+        <Input
+          value={value}
+          placeholder="Eigene Feld-ID"
+          onChange={(e) => onCustomChange(e.target.value)}
+        />
+      )}
+    </div>
+  );
+}
+
+export function ElementProperties({
+  element,
+  canvasWidthPx,
+  canvasHeightPx,
+  onChange,
+}: ElementPropertiesProps) {
   if (!element) {
     return (
       <p className="text-sm text-slate-500">
@@ -66,16 +141,39 @@ export function ElementProperties({ element, onChange }: ElementPropertiesProps)
         {ELEMENT_KIND_LABELS[element.kind]}
       </p>
 
-      <BoxFields box={element.box} onChange={patchBox} />
+      <BoxFields
+        box={element.box}
+        canvasWidthPx={canvasWidthPx}
+        canvasHeightPx={canvasHeightPx}
+        onChange={patchBox}
+      />
 
       {element.kind === "text" && (
         <>
           <div className="space-y-1">
-            <Label className="text-xs">Feld-ID</Label>
-            <Input
+            <Label className="text-xs">Feld-Verbindung</Label>
+            <FieldIdSelect
               value={element.field}
-              onChange={(e) => patch({ field: e.target.value } as Partial<TemplateElement>)}
+              options={TEMPLATE_TEXT_FIELD_OPTIONS}
+              isKnown={isKnownTextFieldId}
+              onSelect={(fieldId) => {
+                const preset = TEMPLATE_TEXT_FIELD_OPTIONS.find(
+                  (o) => o.id === fieldId,
+                );
+                onChange({
+                  ...element,
+                  field: fieldId,
+                  label: preset?.elementLabel ?? element.label,
+                  defaultText: preset?.defaultText ?? element.defaultText,
+                });
+              }}
+              onCustomChange={(field) =>
+                patch({ field } as Partial<TemplateElement>)
+              }
             />
+            <p className="text-xs text-slate-500">
+              Verknüpft mit dem gleichnamigen Eingabefeld im Generator.
+            </p>
           </div>
           <div className="space-y-1">
             <Label className="text-xs">Label</Label>
@@ -130,7 +228,7 @@ export function ElementProperties({ element, onChange }: ElementPropertiesProps)
           <div className="space-y-1">
             <Label className="text-xs">Ausrichtung</Label>
             <select
-              className="flex h-9 w-full rounded-md border border-input bg-background px-2 text-sm"
+              className={selectClassName}
               value={element.style.align}
               onChange={(e) =>
                 onChange({
@@ -152,10 +250,24 @@ export function ElementProperties({ element, onChange }: ElementPropertiesProps)
       {(element.kind === "image" || element.kind === "partnerLogo") && (
         <>
           <div className="space-y-1">
-            <Label className="text-xs">Slot-ID</Label>
-            <Input
+            <Label className="text-xs">Bild-Slot</Label>
+            <FieldIdSelect
               value={element.slot}
-              onChange={(e) => patch({ slot: e.target.value } as Partial<TemplateElement>)}
+              options={TEMPLATE_IMAGE_SLOT_OPTIONS}
+              isKnown={isKnownImageSlotId}
+              onSelect={(slotId) => {
+                const preset = TEMPLATE_IMAGE_SLOT_OPTIONS.find(
+                  (o) => o.id === slotId,
+                );
+                onChange({
+                  ...element,
+                  slot: slotId,
+                  label: preset?.elementLabel ?? element.label,
+                });
+              }}
+              onCustomChange={(slot) =>
+                patch({ slot } as Partial<TemplateElement>)
+              }
             />
           </div>
           <div className="space-y-1">
@@ -172,7 +284,7 @@ export function ElementProperties({ element, onChange }: ElementPropertiesProps)
         <div className="space-y-1">
           <Label className="text-xs">Variante</Label>
           <select
-            className="flex h-9 w-full rounded-md border border-input bg-background px-2 text-sm"
+            className={selectClassName}
             value={element.variant}
             onChange={(e) =>
               onChange({

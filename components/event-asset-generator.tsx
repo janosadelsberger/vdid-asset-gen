@@ -14,6 +14,13 @@ import { TimePicker } from "@/components/ui/time-picker";
 import { Checkbox } from "@/components/ui/checkbox";
 import { publicFile } from "@/lib/public-file";
 import { exportAssetBasename } from "@/lib/export-naming";
+import {
+  EXPORT_IMAGE_EXT,
+  EXPORT_IMAGE_FORMAT_LABELS,
+  EXPORT_IMAGE_FORMATS,
+  canvasToExportDataUrl,
+  type ExportImageFormat,
+} from "@/lib/export-image";
 import { cn } from "@/lib/utils";
 import { ImageDropZone } from "@/components/image-drop-zone";
 import { ImageEditModal } from "@/components/image-edit-modal";
@@ -849,13 +856,13 @@ export function EventAssetGenerator() {
     });
   };
 
-  const handleDownload = (key: FormatKey) => {
+  const handleDownload = (key: FormatKey, imageFormat: ExportImageFormat) => {
     const canvas = canvasRefs.current[key];
     if (!canvas) return;
-    const url = canvas.toDataURL("image/png");
+    const url = canvasToExportDataUrl(canvas, imageFormat);
     const link = document.createElement("a");
     link.href = url;
-    link.download = `${exportAssetBasename(form.title, FORMAT_EXPORT_SLUG[key], new Date())}.png`;
+    link.download = `${exportAssetBasename(form.title, FORMAT_EXPORT_SLUG[key], new Date())}.${EXPORT_IMAGE_EXT[imageFormat]}`;
     link.click();
   };
 
@@ -906,7 +913,7 @@ export function EventAssetGenerator() {
     form.captionLinkedIn,
   ]);
 
-  const collectPngMissing = React.useCallback(
+  const collectImageExportMissing = React.useCallback(
     (key?: FormatKey): string[] => {
       const missing: string[] = [];
       if (!logoLoaded || !darkLogoLoaded) missing.push("Logo");
@@ -931,22 +938,25 @@ export function EventAssetGenerator() {
     // Wait a bit for canvases to render
     await new Promise((resolve) => setTimeout(resolve, 100));
 
-    const pngArchiveEntries: {
+    const imageArchiveEntries: {
       formatKey: FormatKey;
       label: string;
+      imageFormat: ExportImageFormat;
       filename: string;
     }[] = [];
 
-    // Add each canvas as a PNG to the zip
+    // Add each canvas as PNG and JPEG to the zip
     ALL_FORMAT_KEYS.forEach((key) => {
       const canvas = canvasRefs.current[key];
-      if (canvas) {
-        const dataUrl = canvas.toDataURL("image/png");
+      if (!canvas) return;
+      for (const imageFormat of EXPORT_IMAGE_FORMATS) {
+        const dataUrl = canvasToExportDataUrl(canvas, imageFormat);
         const base64Data = dataUrl.split(",")[1];
-        const name = `${exportAssetBasename(form.title, FORMAT_EXPORT_SLUG[key], downloadDate)}.png`;
-        pngArchiveEntries.push({
+        const name = `${exportAssetBasename(form.title, FORMAT_EXPORT_SLUG[key], downloadDate)}.${EXPORT_IMAGE_EXT[imageFormat]}`;
+        imageArchiveEntries.push({
           formatKey: key,
           label: FORMAT_CONFIG[key].label,
+          imageFormat,
           filename: name,
         });
         zip.file(name, base64Data, { base64: true });
@@ -1027,9 +1037,10 @@ export function EventAssetGenerator() {
         },
       },
       filesInArchive: {
-        pngImages: pngArchiveEntries.map((e) => ({
+        images: imageArchiveEntries.map((e) => ({
           formatKey: e.formatKey,
           label: e.label,
+          imageFormat: e.imageFormat,
           filename: e.filename,
         })),
         captionTextFiles: captionTxtArchiveEntries.map((e) => ({
@@ -1082,14 +1093,19 @@ export function EventAssetGenerator() {
     void handleDownloadAll();
   };
 
-  const handlePngButtonClick = (key: FormatKey) => {
-    const missing = collectPngMissing(key);
+  const handleImageButtonClick = (
+    key: FormatKey,
+    imageFormat: ExportImageFormat,
+  ) => {
+    const missing = collectImageExportMissing(key);
     if (missing.length > 0) {
-      setExportHint(`Für PNG-Download fehlt: ${missing.join(", ")}.`);
+      setExportHint(
+        `Für ${EXPORT_IMAGE_FORMAT_LABELS[imageFormat]}-Download fehlt: ${missing.join(", ")}.`,
+      );
       return;
     }
     setExportHint(null);
-    handleDownload(key);
+    handleDownload(key, imageFormat);
   };
 
   return (
@@ -1342,7 +1358,7 @@ export function EventAssetGenerator() {
       <div className="grid gap-4 lg:grid-cols-2">
         {ALL_FORMAT_KEYS.map((key) => {
           const cfg = FORMAT_CONFIG[key];
-          const pngReady =
+          const imageReady =
             assetsReady &&
             form.title.trim().length > 0 &&
             form.copyright.trim().length > 0 &&
@@ -1351,19 +1367,24 @@ export function EventAssetGenerator() {
             <Card key={key}>
               <CardHeader>
                 <CardTitle>{cfg.label}</CardTitle>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  type="button"
-                  onClick={() => handlePngButtonClick(key)}
-                  aria-disabled={!pngReady}
-                  className={cn(
-                    !pngReady &&
-                      "opacity-50 saturate-50 cursor-pointer hover:opacity-60",
-                  )}
-                >
-                  PNG herunterladen
-                </Button>
+                <div className="flex flex-wrap gap-2">
+                  {EXPORT_IMAGE_FORMATS.map((imageFormat) => (
+                    <Button
+                      key={imageFormat}
+                      variant="outline"
+                      size="sm"
+                      type="button"
+                      onClick={() => handleImageButtonClick(key, imageFormat)}
+                      aria-disabled={!imageReady}
+                      className={cn(
+                        !imageReady &&
+                          "opacity-50 saturate-50 cursor-pointer hover:opacity-60",
+                      )}
+                    >
+                      {EXPORT_IMAGE_FORMAT_LABELS[imageFormat]} herunterladen
+                    </Button>
+                  ))}
+                </div>
               </CardHeader>
               <CardContent>
                 <div className="w-full border border-slate-200 rounded-md bg-slate-50 p-2 overflow-auto">

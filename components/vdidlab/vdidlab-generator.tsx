@@ -10,8 +10,17 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
 import { loadRgbLogo, loadSwLogo, loadWhiteLogo } from "@/lib/lab-logo";
 import { exportAssetBasename } from "@/lib/export-naming";
+import {
+  EXPORT_IMAGE_EXT,
+  EXPORT_IMAGE_FORMAT_LABELS,
+  EXPORT_IMAGE_FORMATS,
+  allExportImageFormatsEnabled,
+  canvasToExportDataUrl,
+  type ExportImageFormat,
+} from "@/lib/export-image";
 import {
   addCaptionsToZip,
   buildAllCaptionTipsLlmPrompt,
@@ -504,6 +513,10 @@ export function VdidLabGenerator() {
   const [exportFormatsEnabled, setExportFormatsEnabled] = React.useState<
     Record<LabFormatKey, boolean>
   >(allLabFormatsEnabled);
+  const [exportImageFormatsEnabled, setExportImageFormatsEnabled] =
+    React.useState<Record<ExportImageFormat, boolean>>(
+      allExportImageFormatsEnabled,
+    );
   const [photoEditModalOpen, setPhotoEditModalOpen] = React.useState(false);
   const [slideDeleteId, setSlideDeleteId] = React.useState<string | null>(null);
   const [photoNaturalSize, setPhotoNaturalSize] = React.useState<{
@@ -535,9 +548,14 @@ export function VdidLabGenerator() {
     [exportFormatsEnabled],
   );
 
-  const enabledPngFormats = React.useMemo(
+  const enabledRasterFormats = React.useMemo(
     () => enabledExportFormats.filter((key) => key !== "pdf"),
     [enabledExportFormats],
+  );
+
+  const enabledImageFormats = React.useMemo(
+    () => EXPORT_IMAGE_FORMATS.filter((f) => exportImageFormatsEnabled[f]),
+    [exportImageFormatsEnabled],
   );
 
   const toggleExportFormat = (key: LabFormatKey, checked: boolean) => {
@@ -547,6 +565,19 @@ export function VdidLabGenerator() {
         if (enabledCount <= 1) return prev;
       }
       return { ...prev, [key]: checked };
+    });
+  };
+
+  const toggleExportImageFormat = (
+    format: ExportImageFormat,
+    checked: boolean,
+  ) => {
+    setExportImageFormatsEnabled((prev) => {
+      if (!checked) {
+        const enabledCount = EXPORT_IMAGE_FORMATS.filter((f) => prev[f]).length;
+        if (enabledCount <= 1 && enabledRasterFormats.length > 0) return prev;
+      }
+      return { ...prev, [format]: checked };
     });
   };
 
@@ -956,10 +987,14 @@ export function VdidLabGenerator() {
       return;
     }
 
-    const pngFormatKeys = enabledPngFormats;
+    const rasterFormatKeys = enabledRasterFormats;
     const includePdf = exportFormatsEnabled.pdf;
-    if (pngFormatKeys.length === 0 && !includePdf) {
+    if (rasterFormatKeys.length === 0 && !includePdf) {
       setExportHint("Mindestens ein Exportformat auswählen.");
+      return;
+    }
+    if (rasterFormatKeys.length > 0 && enabledImageFormats.length === 0) {
+      setExportHint("Mindestens PNG oder JPEG auswählen.");
       return;
     }
 
@@ -979,26 +1014,30 @@ export function VdidLabGenerator() {
     const downloadDate = new Date();
     const offscreen = document.createElement("canvas");
 
-    const pngArchiveEntries: {
+    const imageArchiveEntries: {
       formatKey: LabFormatKey;
       label: string;
+      imageFormat: ExportImageFormat;
       filename: string;
     }[] = [];
 
-    for (const formatKey of pngFormatKeys) {
+    for (const formatKey of rasterFormatKeys) {
       const cfg = FORMAT_CONFIG[formatKey];
       slides.forEach((slide, i) => {
         renderLabSlide(offscreen, slide, formatKey, assets);
-        const dataUrl = offscreen.toDataURL("image/png");
-        const base64 = dataUrl.split(",")[1];
         const slideSuffix = slides.length > 1 ? `_slide-${i + 1}` : "";
-        const name = `${exportAssetBasename(title, `${cfg.exportSlug}${slideSuffix}`, downloadDate)}.png`;
-        pngArchiveEntries.push({
-          formatKey,
-          label: cfg.label,
-          filename: name,
-        });
-        zip.file(name, base64, { base64: true });
+        for (const imageFormat of enabledImageFormats) {
+          const dataUrl = canvasToExportDataUrl(offscreen, imageFormat);
+          const base64 = dataUrl.split(",")[1];
+          const name = `${exportAssetBasename(title, `${cfg.exportSlug}${slideSuffix}`, downloadDate)}.${EXPORT_IMAGE_EXT[imageFormat]}`;
+          imageArchiveEntries.push({
+            formatKey,
+            label: cfg.label,
+            imageFormat,
+            filename: name,
+          });
+          zip.file(name, base64, { base64: true });
+        }
       });
     }
 
@@ -1007,7 +1046,7 @@ export function VdidLabGenerator() {
       const pdf = new jsPDF({ unit: "px", format: [1080, 1080], compress: true });
       slides.forEach((slide, i) => {
         renderLabSlide(offscreen, slide, "pdf", assets);
-        const dataUrl = offscreen.toDataURL("image/png");
+        const dataUrl = canvasToExportDataUrl(offscreen, "png");
         if (i > 0) pdf.addPage([1080, 1080], "p");
         pdf.addImage(dataUrl, "PNG", 0, 0, 1080, 1080);
       });
@@ -1049,9 +1088,10 @@ export function VdidLabGenerator() {
         })),
       },
       filesInArchive: {
-        pngImages: pngArchiveEntries.map((e) => ({
+        images: imageArchiveEntries.map((e) => ({
           formatKey: e.formatKey,
           label: e.label,
+          imageFormat: e.imageFormat,
           filename: e.filename,
         })),
         captionTextFiles: captionTxtArchiveEntries.map((e) => ({
@@ -1076,6 +1116,10 @@ export function VdidLabGenerator() {
   const handleZipButtonClick = () => {
     if (enabledExportFormats.length === 0) {
       setExportHint("Mindestens ein Exportformat auswählen.");
+      return;
+    }
+    if (enabledRasterFormats.length > 0 && enabledImageFormats.length === 0) {
+      setExportHint("Mindestens PNG oder JPEG auswählen.");
       return;
     }
     void handleDownloadAllAssets();
@@ -1507,10 +1551,43 @@ export function VdidLabGenerator() {
             <p className="text-sm text-slate-600">
               Bilder, Captions (.txt), PDF und Manifest als ZIP.
             </p>
+            {enabledRasterFormats.length > 0 && (
+              <div className="space-y-2">
+                <p className="text-xs font-medium text-slate-500">
+                  Bilddateiformat
+                </p>
+                <div className="flex flex-wrap gap-4">
+                  {EXPORT_IMAGE_FORMATS.map((imageFormat) => (
+                    <label
+                      key={imageFormat}
+                      htmlFor={`lab-image-format-${imageFormat}`}
+                      className="flex cursor-pointer items-center gap-2 text-sm text-slate-700"
+                    >
+                      <Checkbox
+                        id={`lab-image-format-${imageFormat}`}
+                        checked={exportImageFormatsEnabled[imageFormat]}
+                        onChange={(e) =>
+                          toggleExportImageFormat(
+                            imageFormat,
+                            e.target.checked,
+                          )
+                        }
+                      />
+                      {EXPORT_IMAGE_FORMAT_LABELS[imageFormat]}
+                    </label>
+                  ))}
+                </div>
+              </div>
+            )}
             <div className="flex flex-wrap gap-2">
               <Button
                 type="button"
-                disabled={!logoLoaded || enabledExportFormats.length === 0}
+                disabled={
+                  !logoLoaded ||
+                  enabledExportFormats.length === 0 ||
+                  (enabledRasterFormats.length > 0 &&
+                    enabledImageFormats.length === 0)
+                }
                 onClick={handleZipButtonClick}
               >
                 ZIP herunterladen
@@ -1533,6 +1610,7 @@ export function VdidLabGenerator() {
                   setCaptions(EMPTY_CAPTIONS);
                   setSelectedId(null);
                   setExportFormatsEnabled(allLabFormatsEnabled());
+                  setExportImageFormatsEnabled(allExportImageFormatsEnabled());
                   try {
                     localStorage.removeItem(DECK_STORAGE_KEY);
                   } catch {

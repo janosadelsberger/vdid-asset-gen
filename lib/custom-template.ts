@@ -83,7 +83,43 @@ export type CustomTemplate = {
   baseAspect: number;
   backgroundColor: string;
   elements: TemplateElement[];
+  /** Editor-only alignment guides (normalized 0–1). Not rendered on export. */
+  guides?: TemplateGuides;
 };
+
+export type TemplateGuides = {
+  /** Vertical guide x positions (0–1). */
+  vertical: number[];
+  /** Horizontal guide y positions (0–1). */
+  horizontal: number[];
+};
+
+export const EMPTY_TEMPLATE_GUIDES: TemplateGuides = {
+  vertical: [],
+  horizontal: [],
+};
+
+export function normalizeGuides(raw: unknown): TemplateGuides {
+  if (typeof raw !== "object" || raw === null) return { ...EMPTY_TEMPLATE_GUIDES };
+  const o = raw as Partial<TemplateGuides>;
+  const clamp = (v: number) => Math.min(1, Math.max(0, v));
+  const dedupe = (values: number[]) =>
+    [...new Set(values.map((v) => Math.round(v * 10000) / 10000))].sort(
+      (a, b) => a - b,
+    );
+  const nums = (arr: unknown) =>
+    Array.isArray(arr)
+      ? arr.filter((v): v is number => typeof v === "number" && Number.isFinite(v)).map(clamp)
+      : [];
+  return {
+    vertical: dedupe(nums(o.vertical)),
+    horizontal: dedupe(nums(o.horizontal)),
+  };
+}
+
+export function getTemplateGuides(template: CustomTemplate): TemplateGuides {
+  return normalizeGuides(template.guides);
+}
 
 export type CustomSlideImageSlot = {
   url: string | null;
@@ -286,6 +322,7 @@ export function parseCustomTemplate(raw: unknown): CustomTemplate | null {
     backgroundColor:
       typeof o.backgroundColor === "string" ? o.backgroundColor : "#F0F0F0",
     elements,
+    guides: normalizeGuides(o.guides),
   };
 }
 
@@ -439,4 +476,98 @@ export function boxToPixels(
     w: box.w * width,
     h: box.h * height,
   };
+}
+
+export function pixelsToBox(
+  px: { x: number; y: number; w: number; h: number },
+  width: number,
+  height: number,
+): NormalizedBox {
+  const toNorm = (v: number, size: number) =>
+    Math.min(1, Math.max(0, v / size));
+  return {
+    x: toNorm(px.x, width),
+    y: toNorm(px.y, height),
+    w: toNorm(px.w, width),
+    h: toNorm(px.h, height),
+  };
+}
+
+/** Editor preview width; height follows template baseAspect. */
+export const TEMPLATE_EDITOR_WIDTH_PX = 540;
+
+export function editorCanvasSizePx(baseAspect: number): {
+  width: number;
+  height: number;
+} {
+  const width = TEMPLATE_EDITOR_WIDTH_PX;
+  const height = Math.round(width / baseAspect);
+  return { width, height };
+}
+
+/** Text field IDs used in custom templates — map to generator slide.fields keys. */
+export const TEMPLATE_TEXT_FIELD_OPTIONS = [
+  {
+    id: "formatLabel",
+    label: "Formatzeile",
+    elementLabel: "Formatzeile",
+    defaultText: "VDID Fortbildung",
+  },
+  {
+    id: "heading",
+    label: "Titel / Überschrift",
+    elementLabel: "Titel",
+    defaultText: "VDID Event",
+  },
+  {
+    id: "dateLine",
+    label: "Datum / Ort",
+    elementLabel: "Datum",
+    defaultText: "01.01.2026 | 10:00",
+  },
+  {
+    id: "body",
+    label: "Fließtext",
+    elementLabel: "Text",
+    defaultText: "Text",
+  },
+  {
+    id: "name",
+    label: "Name",
+    elementLabel: "Name",
+    defaultText: "Name",
+  },
+  {
+    id: "role",
+    label: "Rolle / Funktion",
+    elementLabel: "Rolle",
+    defaultText: "Rolle",
+  },
+  {
+    id: "contact",
+    label: "Kontakt",
+    elementLabel: "Kontakt",
+    defaultText: "kontakt@vdid.de",
+  },
+] as const;
+
+export const TEMPLATE_IMAGE_SLOT_OPTIONS = [
+  { id: "photo", label: "Eventfoto", elementLabel: "Foto" },
+  { id: "hero", label: "Vollflächiges Bild", elementLabel: "Bild" },
+  { id: "partner", label: "Partner-Logo", elementLabel: "Partner-Logo" },
+] as const;
+
+const TEXT_FIELD_IDS = new Set(
+  TEMPLATE_TEXT_FIELD_OPTIONS.map((o) => o.id),
+);
+const IMAGE_SLOT_IDS = new Set(
+  TEMPLATE_IMAGE_SLOT_OPTIONS.map((o) => o.id),
+);
+
+export function isKnownTextFieldId(field: string): boolean {
+  return TEXT_FIELD_IDS.has(field as (typeof TEMPLATE_TEXT_FIELD_OPTIONS)[number]["id"]);
+}
+
+export function isKnownImageSlotId(slot: string): boolean {
+  return IMAGE_SLOT_IDS.has(slot as (typeof TEMPLATE_IMAGE_SLOT_OPTIONS)[number]["id"]);
 }

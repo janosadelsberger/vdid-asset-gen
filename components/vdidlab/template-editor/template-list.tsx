@@ -4,6 +4,7 @@ import React from "react";
 import { Button } from "@/components/ui/button";
 import type { CustomTemplate, TemplateElement } from "@/lib/custom-template";
 import { renderCustomTemplateThumbnail } from "@/lib/custom-template-render";
+import { BUILTIN_TEMPLATE_PRESETS } from "@/lib/builtin-template-presets";
 import type { RenderAssets } from "@/lib/lab-slide-render";
 import { cn } from "@/lib/utils";
 
@@ -13,6 +14,7 @@ export type TemplateListProps = {
   assets: RenderAssets;
   onSelect: (id: string) => void;
   onNew: () => void;
+  onNewFromPreset: (slideType: string) => void;
   onDuplicate: (id: string) => void;
   onDelete: (id: string) => void;
   onImport: () => void;
@@ -25,6 +27,7 @@ export function TemplateList({
   assets,
   onSelect,
   onNew,
+  onNewFromPreset,
   onDuplicate,
   onDelete,
   onImport,
@@ -47,6 +50,27 @@ export function TemplateList({
         <Button type="button" size="sm" onClick={onNew}>
           Neu
         </Button>
+        <select
+          className="h-8 max-w-[10rem] rounded-md border border-input bg-background px-2 text-xs text-slate-900"
+          defaultValue=""
+          onChange={(e) => {
+            const v = e.target.value;
+            if (v) {
+              onNewFromPreset(v);
+              e.target.value = "";
+            }
+          }}
+          aria-label="Aus Standard-Vorlage erstellen"
+        >
+          <option value="" disabled>
+            Aus Standard-Vorlage…
+          </option>
+          {BUILTIN_TEMPLATE_PRESETS.map((p) => (
+            <option key={p.slideType} value={p.slideType}>
+              {p.name}
+            </option>
+          ))}
+        </select>
         <Button type="button" size="sm" variant="outline" onClick={onImport}>
           Import
         </Button>
