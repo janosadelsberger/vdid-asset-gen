@@ -23,6 +23,7 @@ import {
 } from "@/lib/export-image";
 import { cn } from "@/lib/utils";
 import { ImageDropZone } from "@/components/image-drop-zone";
+import { DownloadIcon } from "@/components/download-icon";
 import { ImageEditModal } from "@/components/image-edit-modal";
 import {
   DEFAULT_IMAGE_EDIT_SETTINGS,
@@ -1375,13 +1376,16 @@ export function EventAssetGenerator() {
                       size="sm"
                       type="button"
                       onClick={() => handleImageButtonClick(key, imageFormat)}
+                      aria-label={`${EXPORT_IMAGE_FORMAT_LABELS[imageFormat]} herunterladen`}
                       aria-disabled={!imageReady}
                       className={cn(
+                        "gap-1.5",
                         !imageReady &&
                           "opacity-50 saturate-50 cursor-pointer hover:opacity-60",
                       )}
                     >
-                      {EXPORT_IMAGE_FORMAT_LABELS[imageFormat]} herunterladen
+                      <DownloadIcon />
+                      {EXPORT_IMAGE_FORMAT_LABELS[imageFormat]}
                     </Button>
                   ))}
                 </div>
@@ -1420,13 +1424,16 @@ export function EventAssetGenerator() {
             <Button
               type="button"
               onClick={handleZipButtonClick}
+              aria-label="Alle Assets als ZIP herunterladen"
               aria-disabled={!zipDownloadReady}
               className={cn(
+                "gap-1.5",
                 !zipDownloadReady &&
                   "opacity-50 saturate-50 cursor-pointer hover:opacity-60",
               )}
             >
-              Alle Assets als ZIP herunterladen
+              <DownloadIcon />
+              ZIP
             </Button>
             <Button
               type="button"

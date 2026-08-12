@@ -31,6 +31,7 @@ import {
 } from "@/lib/captions";
 import { formatLabDeckForLlmPrompt } from "@/lib/lab-caption-prompt";
 import { CaptionFieldsCard } from "@/components/caption-fields-card";
+import { DownloadIcon } from "@/components/download-icon";
 import { LabFormatPicker } from "@/components/vdidlab/lab-format-picker";
 import { cn } from "@/lib/utils";
 import { ImageDropZone } from "@/components/image-drop-zone";
@@ -1589,10 +1590,13 @@ export function VdidLabGenerator() {
                     enabledImageFormats.length === 0)
                 }
                 onClick={handleZipButtonClick}
+                aria-label="ZIP herunterladen"
+                className="gap-1.5"
               >
-                ZIP herunterladen
+                <DownloadIcon />
+                ZIP
                 {enabledExportFormats.length < ALL_LAB_FORMAT_KEYS.length && (
-                  <span className="ml-1 font-normal opacity-80">
+                  <span className="font-normal opacity-80">
                     ({enabledExportFormats.length} Formate)
                   </span>
                 )}
