@@ -14,6 +14,7 @@ import {
   type CustomTemplate,
   type TemplateElement,
 } from "@/lib/custom-template";
+import { squareLogoElements } from "@/lib/lab-layout";
 import { createBuiltinTemplatePreset } from "@/lib/builtin-template-presets";
 import type { RenderAssets, SlideType } from "@/lib/lab-slide-render";
 import { EditorCanvas } from "@/components/vdidlab/template-editor/editor-canvas";
@@ -92,7 +93,11 @@ export function TemplateEditorModal({
     persist(
       templates.map((t) =>
         t.id === updated.id
-          ? { ...updated, baseAspect: editorAspect }
+          ? {
+              ...updated,
+              baseAspect: editorAspect,
+              elements: squareLogoElements(updated.elements, editorAspect),
+            }
           : t,
       ),
     );
@@ -101,6 +106,7 @@ export function TemplateEditorModal({
   const handleNew = () => {
     const t = createDefaultTemplate();
     t.baseAspect = editorAspect;
+    t.elements = squareLogoElements(t.elements, editorAspect);
     persist([...templates, t]);
     setSelectedTemplateId(t.id);
     setSelectedElementId(null);
@@ -121,6 +127,7 @@ export function TemplateEditorModal({
     if (!src) return;
     const copy = cloneTemplate(src);
     copy.baseAspect = editorAspect;
+    copy.elements = squareLogoElements(copy.elements, editorAspect);
     persist([...templates, copy]);
     setSelectedTemplateId(copy.id);
   };
@@ -143,14 +150,27 @@ export function TemplateEditorModal({
     if (imported.length === 0) return;
     const merged = [...templates];
     for (const t of imported) {
-      merged.push({ ...t, id: crypto.randomUUID(), baseAspect: editorAspect });
+      merged.push({
+        ...t,
+        id: crypto.randomUUID(),
+        baseAspect: editorAspect,
+        elements: squareLogoElements(t.elements, editorAspect),
+      });
     }
     persist(merged);
     e.target.value = "";
   };
 
+  const editorTemplate = selectedTemplate
+    ? {
+        ...selectedTemplate,
+        baseAspect: editorAspect,
+        elements: squareLogoElements(selectedTemplate.elements, editorAspect),
+      }
+    : null;
+
   const selectedElement =
-    selectedTemplate?.elements.find((el) => el.id === selectedElementId) ?? null;
+    editorTemplate?.elements.find((el) => el.id === selectedElementId) ?? null;
 
   const canvasSize = editorCanvasSizePx(editorAspect);
 
@@ -171,8 +191,8 @@ export function TemplateEditorModal({
           </Button>
         </div>
 
-        <div className="grid min-h-0 flex-1 grid-cols-1 gap-0 lg:grid-cols-[220px_1fr_260px]">
-          <aside className="border-b border-slate-200 p-4 lg:border-b-0 lg:border-r">
+        <div className="grid min-h-0 flex-1 grid-cols-1 gap-0 overflow-y-auto lg:grid-cols-[220px_1fr_260px] lg:overflow-hidden">
+          <aside className="min-h-0 overflow-y-auto border-b border-slate-200 p-4 lg:border-b-0 lg:border-r">
             <TemplateList
               templates={templates}
               selectedId={selectedTemplateId}
@@ -198,23 +218,13 @@ export function TemplateEditorModal({
           </aside>
 
           <main className="min-h-0 overflow-y-auto p-4">
-            {selectedTemplate ? (
+            {editorTemplate ? (
               <EditorCanvas
-                template={{ ...selectedTemplate, baseAspect: editorAspect }}
+                template={editorTemplate}
                 assets={assets}
                 selectedElementId={selectedElementId}
                 onSelectElement={setSelectedElementId}
                 onUpdateTemplate={updateTemplate}
-                onDeleteSelected={() => {
-                  if (!selectedTemplate || !selectedElementId) return;
-                  updateTemplate({
-                    ...selectedTemplate,
-                    elements: selectedTemplate.elements.filter(
-                      (el) => el.id !== selectedElementId,
-                    ),
-                  });
-                  setSelectedElementId(null);
-                }}
               />
             ) : (
               <p className="text-sm text-slate-500">
@@ -223,37 +233,61 @@ export function TemplateEditorModal({
             )}
           </main>
 
-          <aside className="border-t border-slate-200 p-4 lg:border-l lg:border-t-0">
-            {selectedTemplate && (
+          <aside className="flex min-h-0 flex-col border-t border-slate-200 lg:border-l lg:border-t-0">
+            {editorTemplate && (
               <>
-                <TemplateMetaFields
-                  template={selectedTemplate}
-                  onChange={updateTemplate}
-                />
-                <div className="mb-3 mt-4">
-                  <p className="mb-2 text-xs font-medium text-slate-500">Ebenen</p>
-                  <ElementLayerList
-                    elements={selectedTemplate.elements}
-                    selectedId={selectedElementId}
-                    onSelect={setSelectedElementId}
-                    onReorder={(elements) =>
-                      updateTemplate({ ...selectedTemplate, elements })
-                    }
+                <div className="min-h-0 flex-1 overflow-y-auto p-4">
+                  <TemplateMetaFields
+                    template={editorTemplate}
+                    onChange={updateTemplate}
+                  />
+                  <div className="mb-3 mt-4">
+                    <p className="mb-2 text-xs font-medium text-slate-500">
+                      Ebenen
+                    </p>
+                    <ElementLayerList
+                      elements={editorTemplate.elements}
+                      selectedId={selectedElementId}
+                      onSelect={setSelectedElementId}
+                      onReorder={(elements) =>
+                        updateTemplate({ ...editorTemplate, elements })
+                      }
+                    />
+                  </div>
+                  <ElementProperties
+                    element={selectedElement}
+                    canvasWidthPx={canvasSize.width}
+                    canvasHeightPx={canvasSize.height}
+                    onChange={(element) => {
+                      updateTemplate({
+                        ...editorTemplate,
+                        elements: editorTemplate.elements.map((el) =>
+                          el.id === element.id ? element : el,
+                        ),
+                      });
+                    }}
                   />
                 </div>
-                <ElementProperties
-                  element={selectedElement}
-                  canvasWidthPx={canvasSize.width}
-                  canvasHeightPx={canvasSize.height}
-                  onChange={(element) => {
-                    updateTemplate({
-                      ...selectedTemplate,
-                      elements: selectedTemplate.elements.map((el) =>
-                        el.id === element.id ? element : el,
-                      ),
-                    });
-                  }}
-                />
+                {selectedElement && (
+                  <div className="shrink-0 border-t border-slate-200 p-4">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="w-full text-red-600"
+                      onClick={() => {
+                        updateTemplate({
+                          ...editorTemplate,
+                          elements: editorTemplate.elements.filter(
+                            (el) => el.id !== selectedElement.id,
+                          ),
+                        });
+                        setSelectedElementId(null);
+                      }}
+                    >
+                      Element löschen
+                    </Button>
+                  </div>
+                )}
               </>
             )}
           </aside>

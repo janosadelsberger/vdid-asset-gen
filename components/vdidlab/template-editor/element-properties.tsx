@@ -33,11 +33,13 @@ function BoxFields({
   box,
   canvasWidthPx,
   canvasHeightPx,
+  lockSquare,
   onChange,
 }: {
   box: NormalizedBox;
   canvasWidthPx: number;
   canvasHeightPx: number;
+  lockSquare?: boolean;
   onChange: (box: NormalizedBox) => void;
 }) {
   const px = boxToPixels(box, canvasWidthPx, canvasHeightPx);
@@ -52,6 +54,10 @@ function BoxFields({
     const value = Number(raw);
     if (!Number.isFinite(value)) return;
     const next = { ...px, [key]: value };
+    if (lockSquare && (key === "w" || key === "h")) {
+      next.w = value;
+      next.h = value;
+    }
     onChange(pixelsToBox(next, canvasWidthPx, canvasHeightPx));
   };
 
@@ -145,6 +151,7 @@ export function ElementProperties({
         box={element.box}
         canvasWidthPx={canvasWidthPx}
         canvasHeightPx={canvasHeightPx}
+        lockSquare={element.kind === "logo"}
         onChange={patchBox}
       />
 

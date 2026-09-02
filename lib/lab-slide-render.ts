@@ -16,6 +16,7 @@ import {
   type CustomTemplate,
 } from "@/lib/custom-template";
 import { renderCustomTemplateToContext } from "@/lib/custom-template-render";
+import { getLabLayout, LAB_TYPE } from "@/lib/lab-layout";
 import {
   FONT,
   LAB_BAND,
@@ -119,31 +120,24 @@ type LayoutMetrics = {
 function getLayout(
   width: number,
   height: number,
-  logo: RenderImage,
   topUiSafeInsetRatio?: number,
 ): LayoutMetrics {
-  const scale = Math.min(width, height) / 1080;
-  const marginX = width * 0.08;
-  const marginY = height * 0.08;
+  const lab = getLabLayout(width, height);
   const topSafe =
     topUiSafeInsetRatio != null && topUiSafeInsetRatio > 0
       ? height * topUiSafeInsetRatio
       : 0;
-  const logoHeight = Math.min(height * 0.135, 142 * scale);
-  const lnw = logo.naturalWidth || logo.width || 200;
-  const lnh = logo.naturalHeight || logo.height || 200;
-  const logoWidth = logoHeight * (lnw / lnh);
 
   return {
     width,
     height,
-    marginX,
-    marginY,
-    contentWidth: width - marginX * 2,
-    logoHeight,
-    logoWidth,
+    marginX: lab.marginX,
+    marginY: lab.marginY,
+    contentWidth: lab.contentWidth,
+    logoHeight: lab.logoSize,
+    logoWidth: lab.logoSize,
     topSafe,
-    scale,
+    scale: lab.scale,
   };
 }
 
@@ -286,8 +280,8 @@ function drawAttribution(
   layout: LayoutMetrics,
 ) {
   if (!name.trim() && !role.trim()) return;
-  const nameSize = 30 * layout.scale;
-  const roleSize = 26 * layout.scale;
+  const nameSize = LAB_TYPE.attributionName * layout.scale;
+  const roleSize = LAB_TYPE.attributionRole * layout.scale;
   const right = layout.width - layout.marginX;
   // Align the block so its baseline sits roughly with the logo's vertical center.
   let y = layout.height - layout.marginY - layout.logoHeight * 0.25;
@@ -442,9 +436,9 @@ function drawTitleSlide(
   const maxBottomY =
     layout.height - layout.marginY - layout.logoHeight - layout.marginY * 0.15;
   drawEventHeader(ctx, slide, layout, {
-    labelSize: 30 * layout.scale,
-    headingSize: 90 * layout.scale,
-    dateSize: 40 * layout.scale,
+    labelSize: LAB_TYPE.formatLabel * layout.scale,
+    headingSize: LAB_TYPE.titleHeading * layout.scale,
+    dateSize: LAB_TYPE.titleDate * layout.scale,
     maxBottomY,
   });
   drawLogo(ctx, logo, layout);
@@ -456,8 +450,8 @@ function drawQuoteSlide(
   layout: LayoutMetrics,
   logo: RenderImage,
 ) {
-  const headingSize = 76 * layout.scale;
-  const bodySize = 56 * layout.scale;
+  const headingSize = LAB_TYPE.quoteHeading * layout.scale;
+  const bodySize = LAB_TYPE.quoteBody * layout.scale;
   const attrReserve =
     slide.name?.trim() || slide.role?.trim() ? 72 * layout.scale : 0;
   const bottom = contentBottomY(layout, layout.logoHeight + attrReserve);
@@ -504,9 +498,9 @@ function drawCtaSlide(
   layout: LayoutMetrics,
   logo: RenderImage,
 ) {
-  const headingSize = 88 * layout.scale;
-  const bodySize = 52 * layout.scale;
-  const contactSize = 30 * layout.scale;
+  const headingSize = LAB_TYPE.ctaHeading * layout.scale;
+  const bodySize = LAB_TYPE.ctaBody * layout.scale;
+  const contactSize = LAB_TYPE.ctaContact * layout.scale;
   const contactLines = slide.contact?.trim()
     ? slide.contact.split("\n").length
     : 0;
@@ -597,7 +591,7 @@ function drawEventPhotoSlide(
   logo: RenderImage,
   slideImage: RenderImage | null,
 ) {
-  const presenterSize = 30 * layout.scale;
+  const presenterSize = LAB_TYPE.presenter * layout.scale;
   const hasPresenter = !!slide.name?.trim();
   const footerReserve =
     layout.logoHeight +
@@ -608,9 +602,9 @@ function drawEventPhotoSlide(
     layout.height - footerReserve - imageMinHeight - layout.scale * 8;
 
   const y = drawEventHeader(ctx, slide, layout, {
-    labelSize: 30 * layout.scale,
-    headingSize: 72 * layout.scale,
-    dateSize: 34 * layout.scale,
+    labelSize: LAB_TYPE.formatLabel * layout.scale,
+    headingSize: LAB_TYPE.eventHeading * layout.scale,
+    dateSize: LAB_TYPE.eventDate * layout.scale,
     maxBottomY,
   });
   const imageTop = y + layout.scale * 8;
@@ -662,9 +656,9 @@ function drawCoBrandedSlide(
     layout.height - footerReserve - imageMinHeight - layout.scale * 8;
 
   const y = drawEventHeader(ctx, slide, layout, {
-    labelSize: 30 * layout.scale,
-    headingSize: 72 * layout.scale,
-    dateSize: 34 * layout.scale,
+    labelSize: LAB_TYPE.formatLabel * layout.scale,
+    headingSize: LAB_TYPE.eventHeading * layout.scale,
+    dateSize: LAB_TYPE.eventDate * layout.scale,
     maxBottomY,
   });
 
@@ -709,9 +703,9 @@ function drawFreeformSlide(
   logo: RenderImage,
   slideImage: RenderImage | null,
 ) {
-  const labelSize = 30 * layout.scale;
-  const headingSize = 72 * layout.scale;
-  const bodySize = 38 * layout.scale;
+  const labelSize = LAB_TYPE.formatLabel * layout.scale;
+  const headingSize = LAB_TYPE.eventHeading * layout.scale;
+  const bodySize = LAB_TYPE.freeformBody * layout.scale;
   const hasName = !!slide.name?.trim();
   const footerReserve =
     layout.logoHeight + layout.marginY + (hasName ? 40 * layout.scale : 0);
@@ -785,7 +779,7 @@ function drawFreeformSlide(
   }
 
   if (hasName) {
-    ctx.font = `700 ${30 * layout.scale}px ${FONT}`;
+    ctx.font = `700 ${LAB_TYPE.presenter * layout.scale}px ${FONT}`;
     ctx.fillStyle = LAB_TEXT;
     ctx.textAlign = "right";
     ctx.textBaseline = "alphabetic";
@@ -830,7 +824,6 @@ export function renderLabSlideToContext(
   const layout = getLayout(
     dims.width,
     dims.height,
-    assets.logo,
     dims.topUiSafeInsetRatio,
   );
 

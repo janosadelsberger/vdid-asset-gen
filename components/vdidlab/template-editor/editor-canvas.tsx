@@ -13,6 +13,7 @@ import {
   type TemplateElement,
   type TemplateGuides,
 } from "@/lib/custom-template";
+import { resizeSquareLogoBox } from "@/lib/lab-layout";
 import { renderCustomTemplateSampleToContext } from "@/lib/custom-template-render";
 import {
   type ActiveSnapLines,
@@ -38,7 +39,6 @@ export type EditorCanvasProps = {
   selectedElementId: string | null;
   onSelectElement: (id: string | null) => void;
   onUpdateTemplate: (template: CustomTemplate) => void;
-  onDeleteSelected: () => void;
 };
 
 type ElementDragMode = {
@@ -61,7 +61,6 @@ export function EditorCanvas({
   selectedElementId,
   onSelectElement,
   onUpdateTemplate,
-  onDeleteSelected,
 }: EditorCanvasProps) {
   const canvasRef = React.useRef<HTMLCanvasElement>(null);
   const canvasAreaRef = React.useRef<HTMLDivElement>(null);
@@ -217,7 +216,12 @@ export function EditorCanvas({
       );
       elementDragRef.current = { ...drag, snapLocks: snapped.locks };
       setActiveSnapLines(snapped.activeLines);
-      updateElement(drag.id, { box: snapped.box });
+      const el = template.elements.find((e) => e.id === drag.id);
+      const nextBox =
+        el?.kind === "logo"
+          ? resizeSquareLogoBox(snapped.box, template.baseAspect)
+          : snapped.box;
+      updateElement(drag.id, { box: nextBox });
     }
   };
 
@@ -316,7 +320,7 @@ export function EditorCanvas({
   };
 
   const addElement = (kind: TemplateElement["kind"]) => {
-    const el = createDefaultElement(kind);
+    const el = createDefaultElement(kind, template.baseAspect);
     onUpdateTemplate({
       ...template,
       elements: [...template.elements, el],
@@ -340,17 +344,6 @@ export function EditorCanvas({
               + {ELEMENT_KIND_LABELS[kind]}
             </Button>
           ),
-        )}
-        {selectedElementId && (
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            className="h-7 px-2 text-xs text-red-600"
-            onClick={onDeleteSelected}
-          >
-            Löschen
-          </Button>
         )}
       </div>
 

@@ -1,4 +1,8 @@
 import type { ImageEditSettings } from "@/lib/image-edit";
+import {
+  labLogoNormalizedBox,
+  squareLogoElements,
+} from "@/lib/lab-layout";
 
 /** Normalized box (0–1 fractions of canvas width/height). */
 export type NormalizedBox = {
@@ -194,7 +198,7 @@ export function createDefaultTemplate(name = "Neue Vorlage"): CustomTemplate {
         id: createElementId(),
         kind: "logo",
         variant: "dark",
-        box: { x: 0.08, y: 0.82, w: 0.22, h: 0.1 },
+        box: labLogoNormalizedBox(1080 / 1350),
       },
     ],
   };
@@ -315,13 +319,14 @@ export function parseCustomTemplate(raw: unknown): CustomTemplate | null {
   const elements = Array.isArray(o.elements)
     ? o.elements.map(parseElement).filter((e): e is TemplateElement => e != null)
     : [];
+  const baseAspect = typeof o.baseAspect === "number" ? o.baseAspect : 1080 / 1350;
   return {
     id: o.id,
     name: o.name,
-    baseAspect: typeof o.baseAspect === "number" ? o.baseAspect : 1080 / 1350,
+    baseAspect,
     backgroundColor:
       typeof o.backgroundColor === "string" ? o.backgroundColor : "#F0F0F0",
-    elements,
+    elements: squareLogoElements(elements, baseAspect),
     guides: normalizeGuides(o.guides),
   };
 }
@@ -400,7 +405,10 @@ export function defaultContentForTemplate(template: CustomTemplate): CustomSlide
   return { fields, images };
 }
 
-export function createDefaultElement(kind: TemplateElement["kind"]): TemplateElement {
+export function createDefaultElement(
+  kind: TemplateElement["kind"],
+  baseAspect = 1080 / 1350,
+): TemplateElement {
   const id = createElementId();
   switch (kind) {
     case "text":
@@ -426,7 +434,7 @@ export function createDefaultElement(kind: TemplateElement["kind"]): TemplateEle
         id,
         kind: "logo",
         variant: "dark",
-        box: { x: 0.08, y: 0.82, w: 0.22, h: 0.1 },
+        box: labLogoNormalizedBox(baseAspect),
       };
     case "partnerLogo":
       return {

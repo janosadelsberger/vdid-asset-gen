@@ -58,23 +58,28 @@ function pickLogo(
   return v === "light" && logoWhite ? logoWhite : logoDark;
 }
 
+/**
+ * VDID lockup is a square (200×200 viewBox). Draw a square from the box's
+ * bottom-left — never center-fit a rectangle, or the mark jumps when the
+ * canvas aspect or decoded image size changes.
+ */
+function logoDrawRect(box: { x: number; y: number; w: number; h: number }) {
+  const size = Math.min(box.w, box.h);
+  return {
+    x: box.x,
+    y: box.y + box.h - size,
+    w: size,
+    h: size,
+  };
+}
+
 function drawLogoInBox(
   ctx: Ctx,
   logo: RenderImage,
   box: { x: number; y: number; w: number; h: number },
 ) {
-  const lnw = logo.naturalWidth || logo.width || 200;
-  const lnh = logo.naturalHeight || logo.height || 200;
-  const aspect = lnw / lnh;
-  let drawW = box.w;
-  let drawH = drawW / aspect;
-  if (drawH > box.h) {
-    drawH = box.h;
-    drawW = drawH * aspect;
-  }
-  const dx = box.x + (box.w - drawW) / 2;
-  const dy = box.y + (box.h - drawH) / 2;
-  ctx.drawImage(logo, dx, dy, drawW, drawH);
+  const dest = logoDrawRect(box);
+  ctx.drawImage(logo, dest.x, dest.y, dest.w, dest.h);
 }
 
 function drawPartnerLogoInBox(
@@ -172,7 +177,14 @@ function drawElement(
       break;
     }
     case "logo": {
-      const logo = pickLogo(ctx, el.variant, box, assets.logo, assets.logoWhite);
+      const dest = logoDrawRect(box);
+      const logo = pickLogo(
+        ctx,
+        el.variant,
+        dest,
+        assets.logo,
+        assets.logoWhite,
+      );
       drawLogoInBox(ctx, logo, box);
       break;
     }
